@@ -493,7 +493,8 @@ jobs:
             --worker-name kody-platform \
             --runtime-worker-name kody-runtime \
             --main-worker-name kody-production \
-            --out-config packages/platform-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+            --out-config packages/platform-worker/wrangler-production.generated.json \
+            --out-platform-bootstrap-config packages/platform-worker/wrangler-production-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
@@ -703,6 +704,9 @@ jobs:
       # Deploys before runtime and origin so cross-script Durable Object
       # bindings stay valid. See
       # docs/contributing/architecture/platform-worker-migration-runbook.md.
+      # On a fresh fleet this first upload is the bootstrap config with every
+      # runtime reference removed (the runtime script may not have been created
+      # yet); the full config is republished after the runtime deploy below.
       - name: ☁️ Deploy platform worker to Cloudflare Workers
         id: deploy_platform
         if: >-
@@ -711,8 +715,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
-          WRANGLER_CONFIG:
-            ${{ steps.platform_config.outputs.platform_wrangler_config }}
+          WRANGLER_CONFIG: >-
+            ${{
+              steps.resources.outputs.origin_deploy_mode == 'fresh' &&
+              steps.platform_config.outputs.platform_bootstrap_wrangler_config ||
+              steps.platform_config.outputs.platform_wrangler_config
+            }}
         run: |
           set -euo pipefail
 
@@ -811,6 +819,51 @@ jobs:
           if [ -n "$RUNTIME_URL" ]; then
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
           fi
+
+      # Fresh fleet only: the pre-runtime platform upload used the bootstrap
+      # config with every runtime reference removed, so republish the full
+      # config now that kody-runtime exports its Durable Object classes.
+      - name: ☁️ Publish platform worker runtime bindings (fresh fleet)
+        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.platform_config.outputs.platform_wrangler_config }}
+        run: |
+          set -euo pipefail
+
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy-platform-full.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Platform full deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --name kody-platform --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-platform-full.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Platform full deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Platform full deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
       - name: 🧾 Collect deploy info
         id: deploy_info
