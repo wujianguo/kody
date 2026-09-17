@@ -270,7 +270,10 @@
 				"SENTRY_ENVIRONMENT": "production",
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
-				"PACKAGE_APP_BASE_URL": "https://kody.run",
+				// Fork deployment origin. Must be a separate registrable domain
+				// from APP_BASE_URL for hosted package apps to serve; see the
+				// note on the same var in packages/worker/wrangler.jsonc.
+				"PACKAGE_APP_BASE_URL": "https://kody-apps.apphub.work",
 			},
 		},
 		"preview": {

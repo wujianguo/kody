@@ -157,7 +157,8 @@ function buildMainGeneratedConfig(envName: string) {
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
-			PACKAGE_APP_BASE_URL: envName === 'production' ? 'https://kody.run' : '',
+			PACKAGE_APP_BASE_URL:
+				envName === 'production' ? 'https://kody-apps.apphub.work' : '',
 		},
 	}
 	return { name: 'kody', env: { [envName]: env } }
@@ -315,8 +316,8 @@ test('generate publishes the package-app custom domain for production', async ()
 		// domain in a zone whose route table the deploy also publishes gets
 		// detached (deleting its DNS record) when the routes are replaced.
 		expect(runtimeConfig.env?.production?.routes).toEqual([
-			{ pattern: 'kody.run/*', zone_name: 'kody.run' },
-			{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+			{ pattern: 'kody-apps.apphub.work/*', zone_name: 'apphub.work' },
+			{ pattern: '*.kody-apps.apphub.work/*', zone_name: 'apphub.work' },
 		])
 		expect(runtimeConfig.env?.production?.name).toBe('kody-runtime')
 		expect(runtimeConfig.env?.production?.workers_dev).toBe(true)
@@ -375,8 +376,8 @@ test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone r
 			runtimeConfig.env?.production?.vars?.PACKAGE_APP_LEGACY_REDIRECT,
 		).toBe('true')
 		expect(runtimeConfig.env?.production?.routes).toEqual([
-			{ pattern: 'kody.run/*', zone_name: 'kody.run' },
-			{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+			{ pattern: 'kody-apps.apphub.work/*', zone_name: 'apphub.work' },
+			{ pattern: '*.kody-apps.apphub.work/*', zone_name: 'apphub.work' },
 			{
 				pattern: 'legacy-apps.example.org/*',
 				zone_name: 'example.org',

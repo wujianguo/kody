@@ -229,18 +229,17 @@
 				},
 			],
 			// Replaces the top-level observability block (wrangler env keys
-			// override wholesale, so "enabled" is restated): same tracing,
-			// plus the account-level Sentry OTLP export destination
-			// "sentry-otlp-traces" (Workers Observability -> Destinations),
-			// which points at the kody-cloudflare Sentry project's OTLP
-			// traces endpoint. The destination must exist in the target
-			// account before deploy; forks create their own or remove it.
-			// See docs/contributing/setup-manifest.md.
+			// override wholesale, so "enabled" is restated): same dashboard
+			// tracing, with no OTLP export destination. Kody's
+			// "sentry-otlp-traces" destination was removed for this fork
+			// (Sentry is not used); re-add
+			// `"destinations": ["sentry-otlp-traces"]` only after creating
+			// that account-level destination under Workers Observability ->
+			// Destinations. See docs/contributing/setup-manifest.md.
 			"observability": {
 				"enabled": true,
 				"traces": {
 					"enabled": true,
-					"destinations": ["sentry-otlp-traces"],
 				},
 			},
 			"worker_loaders": [
@@ -562,57 +561,26 @@
 				// configured route — every `npm run dev` request would arrive
 				// as https://kody.run/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
-				"PACKAGE_APP_BASE_URL": "https://kody.run",
+				// Fork deployment origin. Hosted package apps require this to be
+				// a *separate registrable domain* from APP_BASE_URL: a subdomain
+				// of the app origin (for example kody-apps.apphub.work when the
+				// app runs on kody.apphub.work) is rejected at runtime by
+				// getPackageAppOriginConfigurationError, so `{username}` package
+				// apps stay unavailable until a second registrable domain exists.
+				"PACKAGE_APP_BASE_URL": "https://kody-apps.apphub.work",
 				// Email domains are committed (not just GitHub Actions vars) so
-				// they can never silently rederive from APP_BASE_URL. Canonical
-				// email lives on kody.codes. Outbound always sends from the
-				// canonical domains, which requires Email Routing + Email
-				// Sending verification on the kody.codes zone.
-				"USER_EMAIL_DOMAIN": "inbox.kody.codes",
-				"SYSTEM_EMAIL_DOMAIN": "kody.codes",
-				// Fathom Analytics site id (public, non-secret). Production
-				// only so local dev, preview, and tests never send pageviews.
-				"FATHOM_SITE_ID": "WKKSDJGN",
-				// Public playlist whose latest Atom-feed videos may open in
-				// the site-wide `/?youtubeId=` overlay. Tests leave this unset.
-				"YOUTUBE_ALLOWED_PLAYLIST_IDS": "PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY",
-				// Public (non-secret) Stripe Price ids for production
-				// subscriptions. Coupled to the live Stripe account: if a
-				// price is regenerated in Stripe, update the value in the
-				// same change or subscription plan matching silently degrades
-				// to the kody_plan metadata fallback. Checkout sessions are
-				// created server-side for authenticated users (no public
-				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $12/month
-				// price on the "Kody Standard" product;
-				// STRIPE_STANDARD_YEARLY_PRICE_ID is $120/year (two months
-				// free). STRIPE_PRO_PRICE_ID / STRIPE_PRO_YEARLY_PRICE_ID are
-				// the public $49/month and $480/year prices on
-				// prod_V1ChgPPenrxsAX. Previous Pro list prices stay active
-				// in Stripe for existing subscribers and are matched via
-				// retiredProPriceIds. Historical $5 Standard is matched the
-				// same way.
-				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
-				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
-				"STRIPE_PRO_PRICE_ID": "price_1UChg1LAQpAnsYszAYn6eGgt",
-				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1UChg2LAQpAnsYszKAFCR778",
-				// Stripe Billing Portal configuration used by Manage
-				// subscription and by plan changes for existing subscribers
-				// (subscription_update flow, always_invoice proration, price
-				// switches limited to Standard $12/$120 and Pro $49/$480.
-				// Previous Pro list prices stay active off-portal). Preview
-				// and test leave it unset so Stripe uses the account default
-				// configuration.
-				"STRIPE_BILLING_PORTAL_CONFIGURATION_ID": "bpc_1UBzc8LAQpAnsYszyBkO2N3F",
-				// Disaster-recovery exporter → locked R2 bucket in the KCD
-				// (DR) account. The companion S3 credentials are Worker
-				// secrets set out-of-band via the Cloudflare API.
-				"DR_EXPORT_ENABLED": "true",
-				"DR_BACKUP_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
-				"DR_BACKUP_BUCKET_NAME": "kody-production-backups",
-				// Public verification material shared with the DR control plane.
-				// The matching signing private key remains control-plane-only.
-				"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
-				"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "MCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=",
+				// they can never silently rederive from APP_BASE_URL. Outbound
+				// always sends from the canonical domains, which requires Email
+				// Routing + Email Sending verification on the apphub.work zone.
+				"USER_EMAIL_DOMAIN": "inbox.kody.apphub.work",
+				"SYSTEM_EMAIL_DOMAIN": "kody.apphub.work",
+				// Fork deployment: Kody's Fathom analytics id, YouTube playlist,
+				// Stripe price ids / billing-portal configuration, and the KCD
+				// disaster-recovery exporter + manifest verification vars were
+				// removed here. Re-add your own values (plus the matching
+				// STRIPE_SECRET_KEY / DR_* Worker secrets) to enable those
+				// integrations; keeping Kody's ids would target another
+				// operator's accounts.
 			},
 		},
 		"preview": {

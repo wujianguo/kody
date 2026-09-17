@@ -1143,7 +1143,7 @@ jobs:
       == 'true' && needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
-      url: https://status.kody.codes
+      url: https://status.kody.apphub.work
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -1223,7 +1223,7 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          HEALTHCHECK_URL="https://status.kody.codes/health"
+          HEALTHCHECK_URL="https://status.kody.apphub.work/health"
 
           attempts=20
           delay_seconds=3
@@ -1251,9 +1251,11 @@ jobs:
     name: 🛟 Deploy DR backup control plane
     timeout-minutes: 8
     needs: sha-guard
-    if: >-
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_backup_control_plane == 'true'
+    # Fork deployment: Kody's DR control plane runs in a separate Cloudflare
+    # account (DR_DEPLOY_TOKEN / DR_BACKUP_ACCOUNT_ID) that this fork does not
+    # have. Disabled so production deploys stay green; restore the upstream
+    # condition and set the DR_* secrets to turn disaster recovery back on.
+    if: ${{ false }}
     environment:
       name: production
       url: https://kody-dr.kentcdodds.com
