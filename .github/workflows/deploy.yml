@@ -717,7 +717,6 @@ jobs:
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           WRANGLER_CONFIG: >-
             ${{
-              steps.resources.outputs.origin_deploy_mode == 'fresh' &&
               steps.platform_config.outputs.platform_bootstrap_wrangler_config ||
               steps.platform_config.outputs.platform_wrangler_config
             }}
@@ -824,7 +823,7 @@ jobs:
       # config with every runtime reference removed, so republish the full
       # config now that kody-runtime exports its Durable Object classes.
       - name: ☁️ Publish platform worker runtime bindings (fresh fleet)
-        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        if: ${{ true }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
