@@ -208,6 +208,13 @@
 	},
 	// Cron scheduling moved to the jobs worker (packages/jobs-worker, ADR
 	// 0016); the main worker has no scheduled handler.
+	//
+	// Fork note (brand-new Cloudflare account): `kody-jobs` binds
+	// `HOST -> kody-production#JobsHost`, so it cannot deploy before the
+	// origin script exists, while the origin's `JOBS`/`RUNTIME_WORKER`
+	// service bindings need those sibling scripts to exist. Bootstrap the
+	// fleet with a push whose path filter excludes the jobs worker (any
+	// packages/worker/ change does), then deploy the jobs worker afterwards.
 	"env": {
 		"production": {
 			"ratelimits": [
