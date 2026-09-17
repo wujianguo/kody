@@ -305,12 +305,9 @@
 					"name": "EMAIL",
 				},
 			],
-			"artifacts": [
-				{
-					"binding": "ARTIFACTS",
-					"namespace": "production",
-				},
-			],
+			// Fork deployment: ARTIFACTS removed (Cloudflare Artifacts is not
+			// enabled on this account; deploy error 10015). See the note in
+			// packages/worker/wrangler.jsonc.
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
@@ -498,12 +495,8 @@
 					"name": "EMAIL",
 				},
 			],
-			"artifacts": [
-				{
-					"binding": "ARTIFACTS",
-					"namespace": "preview",
-				},
-			],
+			// Fork deployment: ARTIFACTS removed (Artifacts not enabled on this
+			// account).
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",

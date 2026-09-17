@@ -537,12 +537,10 @@
 			"images": {
 				"binding": "IMAGES",
 			},
-			"artifacts": [
-				{
-					"binding": "ARTIFACTS",
-					"namespace": "production",
-				},
-			],
+			// Fork deployment: the ARTIFACTS binding is removed because
+			// Cloudflare Artifacts is not enabled on this account (deploy
+			// error 10015). Re-add the binding plus the Artifacts queue event
+			// subscription to enable package repos.
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				// JSON number on purpose: buildSentryOptions reads the raw
@@ -927,12 +925,8 @@
 			"images": {
 				"binding": "IMAGES",
 			},
-			"artifacts": [
-				{
-					"binding": "ARTIFACTS",
-					"namespace": "preview",
-				},
-			],
+			// Fork deployment: ARTIFACTS removed (Artifacts not enabled on this
+			// account); see the note on the production env above.
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",
