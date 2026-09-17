@@ -9,6 +9,15 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      skip_fleet_siblings:
+        description: >-
+          Bootstrap-only dispatch: skip the jobs and highlight worker jobs so a
+          brand-new Cloudflare account can deploy the origin bootstrap,
+          platform, and runtime fleet before the jobs-worker HOST binding can
+          resolve. Run a normal dispatch afterwards.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -104,8 +113,17 @@ jobs:
             echo "deploy_main=true" >> "$GITHUB_OUTPUT"
             echo "deploy_platform=true" >> "$GITHUB_OUTPUT"
             echo "deploy_runtime=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_highlight=true" >> "$GITHUB_OUTPUT"
+            # Fork addition: a fresh fleet cannot deploy the jobs worker before
+            # the origin script exists (`HOST -> kody-production#JobsHost`), so
+            # a bootstrap-only dispatch skips it and deploys it afterwards.
+            if [ "${{ inputs.skip_fleet_siblings }}" = "true" ]; then
+              echo "deploy_jobs=false" >> "$GITHUB_OUTPUT"
+              echo "deploy_highlight=false" >> "$GITHUB_OUTPUT"
+              echo "Fleet sibling deploys: skipped (skip_fleet_siblings input)."
+            else
+              echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
+              echo "deploy_highlight=true" >> "$GITHUB_OUTPUT"
+            fi
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
