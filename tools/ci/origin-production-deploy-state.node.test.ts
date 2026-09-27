@@ -6,6 +6,7 @@ import {
 	classifyOriginProductionScriptState,
 	inspectOriginProductionScriptState,
 	getCloudflareWorkerScriptExists,
+	getCloudflareWorkerSecretPlaceholder,
 	isCloudflareNotFoundError,
 	isCloudflareOkNonJsonError,
 	originBootstrapConfigPath,
@@ -398,6 +399,140 @@ test('inspectOriginProductionScriptState classifies a multipart script GET plus 
 		},
 	})
 	expect(state.mode).toBe('steady')
+})
+
+test('inspectOriginProductionScriptState accepts only three exact secret-sync placeholders', async () => {
+	const fetcher: typeof fetch = async (input) => {
+		const url = String(input)
+		if (url.includes('/workers/durable_objects/namespaces')) {
+			return Response.json({
+				success: true,
+				result: [{ script: 'kody-jobs', class: 'JobManager' }],
+				result_info: { total_pages: 1 },
+			})
+		}
+		const scriptName = decodeURIComponent(url.split('/').at(-1) ?? '')
+		const form = new FormData()
+		form.set(scriptName, 'export default { fetch() {} }')
+		return new Response(form)
+	}
+	const state = await inspectOriginProductionScriptState({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher,
+	})
+	expect(state.mode).toBe('fresh')
+	expect(planOriginProductionDeploy(state)).toMatchObject({
+		runOriginBootstrap: true,
+		forcePlatformAndRuntime: true,
+	})
+})
+
+test.each([
+	'real script',
+	'wrong part name',
+	'additional part',
+	'malformed multipart',
+])(
+	'inspectOriginProductionScriptState rejects %s in the placeholder fleet',
+	async (caseName) => {
+		const state = await inspectOriginProductionScriptState({
+			accountId: 'acct',
+			apiToken: 'token',
+			apiBaseUrl: 'https://cf.test',
+			fetcher: async (input) => {
+				const url = String(input)
+				if (url.includes('/workers/durable_objects/namespaces')) {
+					return Response.json({
+						success: true,
+						result: [],
+						result_info: { total_pages: 1 },
+					})
+				}
+				const scriptName = decodeURIComponent(url.split('/').at(-1) ?? '')
+				if (
+					scriptName === productionRuntimeScriptName &&
+					caseName === 'malformed multipart'
+				) {
+					return new Response('--invalid', {
+						headers: {
+							'Content-Type': 'multipart/form-data; boundary=invalid',
+						},
+					})
+				}
+				const form = new FormData()
+				form.set(
+					scriptName === productionRuntimeScriptName &&
+						caseName === 'wrong part name'
+						? 'unexpected'
+						: scriptName,
+					scriptName === productionRuntimeScriptName &&
+						caseName === 'real script'
+						? 'export default { fetch() { return new Response("real") } }'
+						: 'export default { fetch() {} }',
+				)
+				if (
+					scriptName === productionRuntimeScriptName &&
+					caseName === 'additional part'
+				)
+					form.set('metadata', '{}')
+				return new Response(form)
+			},
+		})
+		expect(state.mode).toBe('ambiguous')
+		expect(planOriginProductionDeploy(state).runOriginBootstrap).toBe(false)
+	},
+)
+
+test('inspectOriginProductionScriptState rejects placeholders without namespace ownership data', async () => {
+	const state = await inspectOriginProductionScriptState({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher: async (input) => {
+			if (String(input).includes('/workers/durable_objects/namespaces'))
+				throw new Error('unavailable')
+			const form = new FormData()
+			form.set(
+				decodeURIComponent(String(input).split('/').at(-1) ?? ''),
+				'export default { fetch() {} }',
+			)
+			return new Response(form)
+		},
+	})
+	expect(state.mode).toBe('ambiguous')
+})
+
+test('classifyOriginProductionScriptState refuses mixed DO ownership even with verified placeholders', () => {
+	expect(
+		classifyOriginProductionScriptState({
+			originScriptExists: true,
+			platformScriptExists: true,
+			runtimeScriptExists: true,
+			allScriptsAreSecretPlaceholders: true,
+			namespaces: [ownership(productionPlatformScriptName, 'MCP')],
+		}).mode,
+	).toBe('ambiguous')
+})
+
+test('getCloudflareWorkerSecretPlaceholder rejects oversized multipart responses without content-length', async () => {
+	const form = new FormData()
+	form.set(productionOriginScriptName, 'export default { fetch() {} }')
+	form.set('extra', 'x'.repeat(5000))
+	await expect(
+		getCloudflareWorkerSecretPlaceholder({
+			accountId: 'acct',
+			apiToken: 'token',
+			scriptName: productionOriginScriptName,
+			apiBaseUrl: 'https://cf.test',
+			fetcher: async () => {
+				const response = new Response(form)
+				response.headers.delete('content-length')
+				return response
+			},
+		}),
+	).resolves.toBe(false)
 })
 
 test('isCloudflareNotFoundError matches only 404 probe failures', () => {

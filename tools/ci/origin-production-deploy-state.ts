@@ -213,6 +213,7 @@ export function classifyOriginProductionScriptState(input: {
 	originScriptExists: boolean | null
 	platformScriptExists?: boolean | null
 	runtimeScriptExists?: boolean | null
+	allScriptsAreSecretPlaceholders?: boolean
 	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership> | null
 	scriptNames?: OriginFleetScriptNames
 }): OriginProductionScriptState {
@@ -256,6 +257,23 @@ export function classifyOriginProductionScriptState(input: {
 			return scriptState(
 				'fresh',
 				'Origin script is missing and no transferred Durable Object namespace exists on origin, platform, or runtime.',
+			)
+		}
+
+		if (
+			input.originScriptExists &&
+			input.platformScriptExists &&
+			input.runtimeScriptExists &&
+			input.allScriptsAreSecretPlaceholders === true &&
+			scriptNames.origin === productionOriginScriptName &&
+			scriptNames.platform === productionPlatformScriptName &&
+			scriptNames.runtime === productionRuntimeScriptName &&
+			!originOwnsTransferred &&
+			!destinationsOwnAnyTransferred
+		) {
+			return scriptState(
+				'fresh',
+				'All three production scripts contain only the verified secret-sync placeholder and no transferred Durable Object namespace exists.',
 			)
 		}
 
@@ -344,6 +362,63 @@ export async function getCloudflareWorkerScriptExists(input: {
 		if (isCloudflareNotFoundError(error)) return false
 		if (isCloudflareOkNonJsonError(error)) return true
 		throw error
+	}
+}
+
+export async function getCloudflareWorkerSecretPlaceholder(input: {
+	accountId: string
+	apiToken: string
+	scriptName: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}): Promise<boolean> {
+	const baseUrl = input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
+	const url = `${baseUrl.replace(/\/$/, '')}/accounts/${encodeURIComponent(input.accountId)}/workers/scripts/${encodeURIComponent(input.scriptName)}`
+	const controller = new AbortController()
+	const timeout = setTimeout(() => controller.abort(), 30_000)
+	try {
+		const response = await (input.fetcher ?? fetch)(url, {
+			headers: { Authorization: `Bearer ${input.apiToken}` },
+			signal: controller.signal,
+		})
+		if (!response.ok) {
+			throw new Error(`Worker placeholder probe failed (${response.status}).`)
+		}
+		const contentType = response.headers.get('content-type') ?? ''
+		if (!/^multipart\/form-data;\s*boundary=/i.test(contentType)) return false
+		const contentLength = Number(response.headers.get('content-length'))
+		if (contentLength > 4096) return false
+		const reader = response.body?.getReader()
+		if (!reader) return false
+		const chunks: Uint8Array[] = []
+		let size = 0
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			size += value.byteLength
+			if (size > 4096) {
+				reader.releaseLock()
+				return false
+			}
+			chunks.push(value)
+		}
+		const body = new Uint8Array(size)
+		let offset = 0
+		for (const chunk of chunks) {
+			body.set(chunk, offset)
+			offset += chunk.byteLength
+		}
+		const form = await new Response(body, {
+			headers: { 'Content-Type': contentType },
+		}).formData()
+		const entries = [...form.entries()]
+		return (
+			entries.length === 1 &&
+			entries[0]?.[0] === input.scriptName &&
+			entries[0]?.[1] === 'export default { fetch() {} }'
+		)
+	} finally {
+		clearTimeout(timeout)
 	}
 }
 
@@ -441,10 +516,37 @@ export async function inspectOriginProductionScriptState(input: {
 				`Durable Object namespace listing failed; classifying from script existence only. ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
+		let allScriptsAreSecretPlaceholders = false
+		if (
+			namespaces &&
+			originScriptExists &&
+			platformScriptExists &&
+			runtimeScriptExists &&
+			scriptNames.origin === productionOriginScriptName &&
+			scriptNames.platform === productionPlatformScriptName &&
+			scriptNames.runtime === productionRuntimeScriptName &&
+			!namespaces.some(
+				(entry) =>
+					(entry.script === scriptNames.origin ||
+						entry.script === scriptNames.platform ||
+						entry.script === scriptNames.runtime) &&
+					transferredClassNames.some((name) => name === entry.className),
+			)
+		) {
+			allScriptsAreSecretPlaceholders = (
+				await Promise.all(
+					[scriptNames.origin, scriptNames.platform, scriptNames.runtime].map(
+						(scriptName) =>
+							getCloudflareWorkerSecretPlaceholder({ ...client, scriptName }),
+					),
+				)
+			).every(Boolean)
+		}
 		return classifyOriginProductionScriptState({
 			originScriptExists,
 			platformScriptExists,
 			runtimeScriptExists,
+			allScriptsAreSecretPlaceholders,
 			namespaces,
 			scriptNames,
 		})
