@@ -1,6 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
-	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
@@ -719,19 +718,6 @@ async function ensureProductionResources(options: CliOptions) {
 		zoneId: zoneId ?? 'dry-run-zone',
 		dryRun: options.dryRun,
 	})
-	const artifactsEventSubscription =
-		await ensureArtifactsAccountEventSubscription({
-			accountId: accountId ?? 'dry-run-account',
-			apiToken: apiToken ?? 'dry-run-token',
-			name: truncateWithSuffix(
-				bindings.workerName,
-				'-artifacts-lifecycle-events',
-				63,
-			),
-			queueId: artifactsRepoEventsQueue.id,
-			dryRun: options.dryRun,
-		})
-
 	const packageAppHostnames = [
 		bindings.packageAppHostname,
 		...bindings.packageAppLegacyHostnames,
@@ -883,9 +869,6 @@ async function ensureProductionResources(options: CliOptions) {
 		`package_events_dispatch_dead_letter_queue_name=${packageEventsDispatchDeadLetterQueue.name}`,
 	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
-	console.log(
-		`artifacts_event_subscription_id=${artifactsEventSubscription.id}`,
-	)
 }
 
 async function main() {

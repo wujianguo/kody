@@ -547,12 +547,6 @@
 			"images": {
 				"binding": "IMAGES",
 			},
-			"artifacts": [
-				{
-					"binding": "ARTIFACTS",
-					"namespace": "production",
-				},
-			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"SENTRY_TRACES_SAMPLE_RATE": 0,

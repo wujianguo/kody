@@ -45,10 +45,14 @@ test('platform worker owns remaining classes and binds runtime DOs cross-script'
 			script_name: 'kody-runtime',
 		})
 		expect(env?.send_email).toEqual([{ name: 'EMAIL' }])
-		expect(env?.artifacts?.[0]).toMatchObject({
-			binding: 'ARTIFACTS',
-			namespace: envName === 'production' ? 'production' : 'preview',
-		})
+		if (envName === 'preview') {
+			expect(env?.artifacts?.[0]).toMatchObject({
+				binding: 'ARTIFACTS',
+				namespace: 'preview',
+			})
+		} else {
+			expect(env?.artifacts).toBeUndefined()
+		}
 	}
 })
 
