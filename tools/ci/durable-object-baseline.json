@@ -442,11 +442,6 @@
 							"from": "PackageRealtimeSession",
 							"from_script": "kody",
 							"to": "PackageRealtimeSession"
-						},
-						{
-							"from": "PackageServiceInstance",
-							"from_script": "kody",
-							"to": "PackageServiceInstance"
 						}
 					]
 				}

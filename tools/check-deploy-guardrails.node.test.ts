@@ -165,6 +165,29 @@ test('Durable Object guard protects transferred_classes migrations', () => {
 		checkDurableObjectConfig(configPath, matching, transferBaseline, allowlist),
 	).toEqual([])
 
+	const duplicate = {
+		migrations: [
+			{
+				tag: 'v1',
+				new_sqlite_classes: ['RunLog'],
+				transferred_classes: [transfer],
+			},
+		],
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			duplicate,
+			transferBaseline,
+			allowlist,
+		),
+	).toEqual([
+		expect.stringContaining('creates and transfers the same class: RunLog'),
+		expect.stringContaining(
+			'new_sqlite_classes migration "v1" at migrations is not recorded',
+		),
+	])
+
 	const retargeted = {
 		migrations: [
 			{

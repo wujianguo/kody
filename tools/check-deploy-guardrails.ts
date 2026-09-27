@@ -291,6 +291,20 @@ export function checkDurableObjectConfig(
 					migration,
 				)
 			}
+			const newClasses = sortedStrings(migration.new_sqlite_classes)
+			const transfers = normalizeTransferredClasses(
+				migration.transferred_classes,
+			)
+			if (newClasses && transfers) {
+				const duplicated = transfers.filter((entry) =>
+					newClasses.includes(entry.to),
+				)
+				if (duplicated.length > 0) {
+					errors.push(
+						`${configPath}: Durable Object migration "${String(migration.tag)}" at ${section.location} creates and transfers the same class: ${duplicated.map((entry) => entry.to).join(', ')}.`,
+					)
+				}
+			}
 		}
 	}
 
