@@ -247,6 +247,8 @@ export function classifyOriginProductionScriptState(input: {
 
 		if (
 			!input.originScriptExists &&
+			input.platformScriptExists !== true &&
+			input.runtimeScriptExists !== true &&
 			!destinationsOwnTransferred &&
 			!originOwnsTransferred &&
 			!destinationsOwnAnyTransferred
@@ -276,6 +278,8 @@ export function classifyOriginProductionScriptState(input: {
 
 		if (
 			input.originScriptExists &&
+			input.platformScriptExists !== false &&
+			input.runtimeScriptExists !== false &&
 			destinationsOwnTransferred &&
 			!originOwnsTransferred
 		) {
@@ -298,25 +302,19 @@ export function classifyOriginProductionScriptState(input: {
 		input.runtimeScriptExists === false
 	) {
 		return scriptState(
-			'fresh',
-			'Origin, platform, and runtime scripts are all missing (namespace listing unavailable).',
+			'ambiguous',
+			'All production scripts are missing, but Durable Object namespace ownership is unavailable; refusing to guess that a fresh migration is safe.',
 		)
 	}
 
-	// All three scripts exist but we could not list namespace ownership.
-	// Treat as steady and let Cloudflare error 10064 reject a slim upload
-	// if origin still owns a transferred class. Classifying this as
-	// ambiguous would upload the full entry with cross-script bindings,
-	// which serves requests to the wrong script when origin still owns
-	// those classes.
 	if (
 		input.originScriptExists === true &&
 		input.platformScriptExists === true &&
 		input.runtimeScriptExists === true
 	) {
 		return scriptState(
-			'steady',
-			'Origin, platform, and runtime scripts all exist (namespace listing unavailable; Cloudflare rejects a slim upload if origin still owns a class).',
+			'ambiguous',
+			'Production scripts exist, but Durable Object namespace ownership is unavailable; refusing to assume transfers are complete.',
 		)
 	}
 
@@ -397,7 +395,12 @@ export async function listCloudflareDurableObjectNamespaces(input: {
 		}
 		for (const entry of batch) {
 			const ownership = readNamespaceOwnership(entry)
-			if (ownership) namespaces.push(ownership)
+			if (!ownership) {
+				throw new Error(
+					'Cloudflare Durable Object namespace listing contains an unrecognized entry.',
+				)
+			}
+			namespaces.push(ownership)
 		}
 		const totalPages = payload.result_info?.total_pages
 		if (typeof totalPages !== 'number' || page >= totalPages) break
@@ -489,6 +492,13 @@ export function stripOriginCrossScriptClassBindings(
 					delete binding.script_name
 				}
 			}
+		}
+		const services = target.services
+		if (Array.isArray(services)) {
+			target.services = services.filter((entry) => {
+				const service = asRecord(entry)
+				return !service || !scriptNames.has(String(service.service))
+			})
 		}
 		const workflows = target.workflows
 		if (Array.isArray(workflows)) {

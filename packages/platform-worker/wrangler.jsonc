@@ -132,7 +132,6 @@
 				"enabled": true,
 				"traces": {
 					"enabled": true,
-					"destinations": ["sentry-otlp-traces"],
 				},
 			},
 			"worker_loaders": [

@@ -558,6 +558,35 @@ async function ensureProductionResources(options: CliOptions) {
 		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Community Listing Published Queue: ${bindings.communityListingPublishedDispatchQueueName}, Community Listing Published DLQ: ${bindings.communityListingPublishedDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName}, Webhook Dispatch Queue: ${bindings.webhookDispatchQueueName}, Webhook Dispatch DLQ: ${bindings.webhookDispatchDeadLetterQueueName})`,
 	)
 
+	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+	if (
+		(!accountId || !apiToken || !process.env.CLOUDFLARE_ZONE_ID?.trim()) &&
+		!options.dryRun
+	) {
+		fail(
+			'Missing CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, or CLOUDFLARE_API_TOKEN for production resources.',
+		)
+	}
+	const deployState: OriginProductionScriptState =
+		options.dryRun || !accountId || !apiToken
+			? {
+					mode: 'ambiguous',
+					reason:
+						'Dry-run or missing Cloudflare credentials; keep the full origin entry and do not bootstrap transfers.',
+					originOwnedTransferredClassNames: [],
+				}
+			: await inspectOriginProductionScriptState({ accountId, apiToken })
+	if (!options.dryRun && deployState.mode === 'ambiguous') {
+		fail(
+			`Refusing to change production resources with ambiguous origin state: ${deployState.reason}`,
+		)
+	}
+	const deployPlan = planOriginProductionDeploy(deployState)
+	console.error(
+		`Origin production deploy state: ${deployPlan.mode} (${deployPlan.originEntry} entry${deployPlan.runOriginBootstrap ? ', bootstrap then transfer' : ''}). ${deployPlan.reason}`,
+	)
+
 	const d1 = ensureD1Database({
 		name: bindings.d1DatabaseName,
 		configuredId: bindings.d1ConfiguredId,
@@ -592,8 +621,6 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.communityAssetsBucketName,
 		dryRun: options.dryRun,
 	})
-	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
-	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
 	const zoneId = process.env.CLOUDFLARE_ZONE_ID?.trim()
 	if ((!accountId || !apiToken || !zoneId) && !options.dryRun) {
 		fail(
@@ -717,23 +744,6 @@ async function ensureProductionResources(options: CliOptions) {
 			dryRun: options.dryRun,
 		})
 	}
-
-	const deployState: OriginProductionScriptState =
-		options.dryRun || !accountId || !apiToken
-			? {
-					mode: 'ambiguous',
-					reason:
-						'Dry-run or missing Cloudflare credentials; keep the full origin entry and do not bootstrap transfers.',
-					originOwnedTransferredClassNames: [],
-				}
-			: await inspectOriginProductionScriptState({
-					accountId,
-					apiToken,
-				})
-	const deployPlan = planOriginProductionDeploy(deployState)
-	console.error(
-		`Origin production deploy state: ${deployPlan.mode} (${deployPlan.originEntry} entry${deployPlan.runOriginBootstrap ? ', bootstrap then transfer' : ''}). ${deployPlan.reason}`,
-	)
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,

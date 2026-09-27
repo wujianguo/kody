@@ -64,13 +64,13 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	expect(healthy).toContain('class="bar partial"')
 	expect(healthy).toContain('class="bar bad"')
 	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
+		'https://github.com/wujianguo/kody/commit/abc123def4567890abcdef1234567890abcdef12',
 	)
 	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/def4567890abcdef1234567890abcdef12345678',
+		'https://github.com/wujianguo/kody/commit/def4567890abcdef1234567890abcdef12345678',
 	)
 	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/7890abcdef1234567890abcdef1234567890abcd',
+		'https://github.com/wujianguo/kody/commit/7890abcdef1234567890abcdef1234567890abcd',
 	)
 	expect(healthy).toContain('>abc123d<')
 	expect(healthy).toContain('>def4567<')
@@ -206,7 +206,7 @@ test('status page renders provider incidents separately and omits them when abse
 		}),
 	)
 	expect(withoutCommit).not.toContain(
-		'https://github.com/kentcdodds/kody/commit/',
+		'https://github.com/wujianguo/kody/commit/',
 	)
 
 	const unsafeLink = renderStatusPage(
@@ -284,7 +284,7 @@ test('status page keeps resolved incidents glanceable and expands a retrospectiv
 
 test('maintenance page is static HTML with a link back to the status home', () => {
 	const html = renderMaintenancePage()
-	expect(html).toContain('href="https://status.kody.codes/"')
-	expect(html).toContain('status.kody.codes')
+	expect(html).toContain('href="https://status.kody.apphub.work/"')
+	expect(html).toContain('status.kody.apphub.work')
 	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)
 })

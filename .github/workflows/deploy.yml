@@ -97,26 +97,19 @@ jobs:
           fi
           echo "should_deploy=true" >> "$GITHUB_OUTPUT"
 
-          # Always redeploy the DR control plane and status worker on manual
-          # workflow_dispatch. On push-driven deploys, path-filter against a
-          # short ancestor window (not tip^..tip alone): a cancelled Validate
-          # on an intermediate main commit (e.g. squash-merge raced by the
-          # next merge) would otherwise skip optional workers forever, because
-          # the later tip's single-commit diff no longer lists those paths
-          # even though the tip tree contains them (#2436 seal window after
-          # #2438).
+          # Path filters select application workers; this fork skips DR and Nx.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "deploy_main=true" >> "$GITHUB_OUTPUT"
             echo "deploy_platform=true" >> "$GITHUB_OUTPUT"
             echo "deploy_runtime=true" >> "$GITHUB_OUTPUT"
             echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
             echo "deploy_highlight=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: forced (workflow_dispatch)."
+            echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
+            echo "Backup control plane deploy: skipped (fork DR account not configured)."
             echo "Status worker deploy: forced (workflow_dispatch)."
-            echo "Nx cache worker deploy: forced (workflow_dispatch)."
+            echo "Nx cache worker deploy: skipped (fork domain not configured)."
             exit 0
           fi
 
@@ -140,15 +133,15 @@ jobs:
 
           node tools/ci/deploy-path-filter.ts <"$PATH_FILTER_LIST" | tee -a "$GITHUB_OUTPUT"
 
-          if grep -E \
-            '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-)' \
-            "$PATH_FILTER_LIST" >/dev/null; then
-            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: path filter matched."
-          else
-            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: skipped (no relevant path changes)."
+          # The first production upload requires both services to exist.
+          if grep -Fx '.github/workflows/deploy.yml' "$PATH_FILTER_LIST" >/dev/null; then
+            echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_highlight=true" >> "$GITHUB_OUTPUT"
           fi
+
+          # This fork has no configured DR account; never deploy upstream DR resources.
+          echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
+          echo "Backup control plane deploy: skipped (fork DR account not configured)."
 
           if grep -E \
             '^(\.github/workflows/deploy\.yml|packages/status/)' \
@@ -160,18 +153,8 @@ jobs:
             echo "Status worker deploy: skipped (no relevant path changes)."
           fi
 
-          # Do not treat deploy.yml itself as an nx-cache change. Runtime
-          # token / secret wiring edits would otherwise upload this worker
-          # and a 10000 auth miss blocks the rest of the production deploy.
-          if grep -E \
-            '^(\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)' \
-            "$PATH_FILTER_LIST" >/dev/null; then
-            echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
-            echo "Nx cache worker deploy: path filter matched."
-          else
-            echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
-            echo "Nx cache worker deploy: skipped (no relevant path changes)."
-          fi
+          echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
+          echo "Nx cache worker deploy: skipped (fork domain not configured)."
           rm -f "$PATH_FILTER_LIST"
 
   # The jobs worker deploys before origin so origin's JOBS service binding
@@ -303,7 +286,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          node tools/ci/jobs-worker-resources.ts ensure --env production --out-config packages/jobs-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+          node tools/ci/jobs-worker-resources.ts ensure --env production --fresh-migration --out-config packages/jobs-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (jobs)
         env:
@@ -341,7 +324,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           WRANGLER_CONFIG:
-            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_bootstrap_config || steps.jobs_resources.outputs.jobs_wrangler_config }}
         run: |
           set -euo pipefail
 
@@ -501,7 +484,8 @@ jobs:
             --worker-name kody-platform \
             --runtime-worker-name kody-runtime \
             --main-worker-name kody-production \
-            --out-config packages/platform-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+            --out-config packages/platform-worker/wrangler-production.generated.json \
+            --out-platform-bootstrap-config packages/platform-worker/wrangler-production-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
@@ -708,14 +692,25 @@ jobs:
             deploy_delay_seconds=$((deploy_delay_seconds * 2))
           done
 
+      - name: ☁️ Bootstrap fresh platform worker
+        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.platform_config.outputs.platform_bootstrap_wrangler_config }}
+        run: |
+          set -euo pipefail
+          npm run deploy -- --name kody-platform --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+
       # Deploys before runtime and origin so cross-script Durable Object
       # bindings stay valid. See
       # docs/contributing/architecture/platform-worker-migration-runbook.md.
       - name: ☁️ Deploy platform worker to Cloudflare Workers
         id: deploy_platform
         if: >-
-          needs.sha-guard.outputs.deploy_platform == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          needs.sha-guard.outputs.deploy_platform == 'true' &&
+          steps.resources.outputs.origin_deploy_mode != 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -820,6 +815,22 @@ jobs:
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: ☁️ Complete fresh platform worker bindings
+        id: deploy_platform_fresh
+        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.platform_config.outputs.platform_wrangler_config }}
+        run: |
+          set -euo pipefail
+          npm run deploy -- --name kody-platform --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-platform-full.log
+          PLATFORM_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8"); const matches = text.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)?kody-platform\.[a-zA-Z0-9._-]+\.workers\.dev/g); process.stdout.write(matches?.at(-1) ?? "")' deploy-platform-full.log)"
+          if [ -n "$PLATFORM_URL" ]; then
+            echo "url=$PLATFORM_URL" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 🧾 Collect deploy info
         id: deploy_info
         if: >-
@@ -896,6 +907,17 @@ jobs:
             echo "url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: ☁️ Restore jobs worker HOST binding
+        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          node tools/ci/jobs-worker-resources.ts ensure --env production --out-config packages/jobs-worker/wrangler-production.generated.json > jobs-resources.log
+          node ./wrangler-env.ts deploy --config packages/jobs-worker/wrangler-production.generated.json --name kody-jobs --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+
       - name: 📤 Upload Worker source maps to Sentry
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -961,7 +983,7 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         shell: bash
         env:
-          PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
+          PLATFORM_URL: ${{ steps.deploy_platform_fresh.outputs.url || steps.deploy_platform.outputs.url }}
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
@@ -1169,7 +1191,7 @@ jobs:
       == 'true' && needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
-      url: https://status.kody.codes
+      url: https://status.kody.apphub.work
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -1249,7 +1271,7 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          HEALTHCHECK_URL="https://status.kody.codes/health"
+          HEALTHCHECK_URL="https://status.kody.apphub.work/health"
 
           attempts=20
           delay_seconds=3
@@ -1277,9 +1299,7 @@ jobs:
     name: 🛟 Deploy DR backup control plane
     timeout-minutes: 8
     needs: sha-guard
-    if: >-
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_backup_control_plane == 'true'
+    if: false
     environment:
       name: production
       url: https://kody-dr.kentcdodds.com
@@ -1353,9 +1373,7 @@ jobs:
 
   deploy-nx-cache-worker:
     needs: sha-guard
-    if: >-
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_nx_cache_worker == 'true'
+    if: false
     uses: ./.github/workflows/nx-cache-deploy.yml
     secrets: inherit
     with:

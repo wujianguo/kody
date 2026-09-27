@@ -286,7 +286,7 @@ function renderProviderIncident(incident: ProviderIncident): string {
 }
 
 /** Public GitHub repository for the main kody worker (production deploys). */
-const productionRepo = 'kentcdodds/kody'
+const productionRepo = 'wujianguo/kody'
 
 function productionCommitLink(commitSha: string): string {
 	const shortSha = commitSha.slice(0, 7)
@@ -320,7 +320,7 @@ function renderProviderIncidentsSection(
 </section>`
 }
 
-const statusPageUrl = 'https://status.kody.codes/'
+const statusPageUrl = 'https://status.kody.apphub.work/'
 
 /** Static HTML for origin-edge maintenance. No Durable Object or D1. */
 export function renderMaintenancePage(): string {
@@ -340,7 +340,7 @@ ${renderFaviconLinks('unknown')}
 	</header>
 	<div class="banner unknown">Service restore in progress</div>
 	<div class="card">
-		<p>Kody is in maintenance. We are restoring service; nothing you need to do. Check <a href="${statusPageUrl}">status.kody.codes</a> for updates.</p>
+		<p>Kody is in maintenance. We are restoring service; nothing you need to do. Check <a href="${statusPageUrl}">status.kody.apphub.work</a> for updates.</p>
 	</div>
 </main>
 </body>
@@ -404,7 +404,7 @@ ${renderFaviconLinks(snapshot.overallStatus)}
 	${recentIncidents}
 	<footer>
 		${renderProductionCommits(snapshot)}Probes run every minute from an independently deployed worker.
-		<a href="https://kody.codes">kody.codes</a> ·
+		<a href="https://kody.apphub.work">kody.apphub.work</a> ·
 		<a href="/status.json">JSON</a>
 	</footer>
 </main>

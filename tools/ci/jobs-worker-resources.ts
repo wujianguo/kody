@@ -1,5 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import {
+	getCloudflareWorkerScriptExists,
+	listCloudflareDurableObjectNamespaces,
+} from './origin-production-deploy-state.ts'
 
 import {
 	ensureCloudflareQueue,
@@ -19,6 +23,7 @@ type CliOptions = {
 	wranglerConfigPath: string
 	outConfigPath: string
 	dryRun: boolean
+	freshMigration: boolean
 	d1Location?: string
 }
 
@@ -37,6 +42,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 		wranglerConfigPath: 'packages/jobs-worker/wrangler.jsonc',
 		outConfigPath: '',
 		dryRun: false,
+		freshMigration: false,
 		d1Location: undefined,
 	}
 
@@ -76,6 +82,10 @@ function parseArgs(argv: Array<string>): CliOptions {
 			case '--d1-location': {
 				options.d1Location = argv[index + 1] ?? ''
 				index += 1
+				break
+			}
+			case '--fresh-migration': {
+				options.freshMigration = true
 				break
 			}
 			case '--dry-run': {
@@ -175,6 +185,57 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 		)
 	}
 
+	let productionBootstrap = false
+	if (options.envName === 'production' && !options.dryRun) {
+		const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+		const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+		if (!accountId || !apiToken) {
+			fail('Missing Cloudflare credentials for jobs script state inspection.')
+		}
+		const client = { accountId, apiToken }
+		const [jobsExists, originExists, namespaces] = await Promise.all([
+			getCloudflareWorkerScriptExists({ ...client, scriptName: 'kody-jobs' }),
+			getCloudflareWorkerScriptExists({ ...client, scriptName: 'kody-production' }),
+			listCloudflareDurableObjectNamespaces(client),
+		])
+		const owners = namespaces.filter((entry) => entry.className === 'JobManager')
+		if (
+			owners.some(
+				(entry) =>
+					entry.script !== 'kody-jobs' && entry.script !== 'kody-production',
+			)
+		) {
+			fail('JobManager is owned by an unexpected script; refusing to deploy.')
+		}
+		const jobsOwnClass = owners.some((entry) => entry.script === 'kody-jobs')
+		const originOwnsClass = owners.some(
+			(entry) => entry.script === 'kody-production',
+		)
+		if (!jobsExists && !originExists && owners.length === 0) {
+			if (!options.freshMigration) {
+				fail('Fresh jobs deployment requires --fresh-migration.')
+			}
+			productionBootstrap = true
+		} else if (jobsExists && !originExists && jobsOwnClass && !originOwnsClass) {
+			if (!options.freshMigration) {
+				fail('Incomplete fresh jobs deployment requires --fresh-migration.')
+			}
+			productionBootstrap = true
+		} else if (
+			(originExists && !jobsExists && originOwnsClass && !jobsOwnClass) ||
+			(originExists && jobsExists && jobsOwnClass && !originOwnsClass)
+		) {
+			productionBootstrap = false
+		} else {
+			fail(
+				'Jobs/origin script and JobManager ownership are inconsistent; refusing to guess a migration path.',
+			)
+		}
+		if (jobsOwnClass) {
+			baseConfig.migrations = [{ tag: 'v1', new_sqlite_classes: ['JobManager'] }]
+		}
+	}
+
 	const d1 = ensureD1Database({
 		name: jobsDb.database_name,
 		location: options.d1Location,
@@ -271,17 +332,17 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 		host.service = options.hostWorkerName
 	}
 
+	if (productionBootstrap) {
+		baseConfig.migrations = [{ tag: 'v1', new_sqlite_classes: ['JobManager'] }]
+	}
+
 	mkdirSync(path.dirname(options.outConfigPath), { recursive: true })
 	writeFileSync(
 		options.outConfigPath,
 		`${JSON.stringify(baseConfig, null, '\t')}\n`,
 	)
 
-	if (options.envName === 'preview') {
-		// Service bindings cannot reference scripts that do not exist yet, and
-		// per-preview app/jobs workers reference each other. The bootstrap
-		// config omits the HOST binding so the jobs worker can deploy before
-		// the app worker; the full config is deployed again afterwards.
+	if (options.envName === 'preview' || productionBootstrap) {
 		const bootstrapConfig = JSON.parse(JSON.stringify(baseConfig)) as Record<
 			string,
 			unknown
@@ -292,6 +353,9 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 			unknown
 		>
 		delete bootstrapEnv.services
+		if (productionBootstrap) {
+			delete bootstrapConfig.triggers
+		}
 		const bootstrapConfigPath = options.outConfigPath.replace(
 			/\.json$/,
 			'-bootstrap.json',

@@ -252,7 +252,6 @@
 				"enabled": true,
 				"traces": {
 					"enabled": true,
-					"destinations": ["sentry-otlp-traces"],
 				},
 			},
 			"worker_loaders": [
@@ -556,12 +555,6 @@
 			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
-				// JSON number on purpose: buildSentryOptions reads the raw
-				// runtime env and only honors a number here (string secrets
-				// are ignored). 0 disables Sentry SDK trace sampling because
-				// Workers native tracing already exports OTLP traces to
-				// Sentry via the sentry-otlp-traces destination; error
-				// capture is unaffected.
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
 				// Origin hosted package apps are served from. Must stay a
@@ -579,17 +572,16 @@
 				// configured route — every `npm run dev` request would arrive
 				// as https://kody.run/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
-				"PACKAGE_APP_BASE_URL": "https://kody.run",
+				"PACKAGE_APP_BASE_URL": "https://kodybox.bid",
 				// Email domains are committed (not just GitHub Actions vars) so
-				// they can never silently rederive from APP_BASE_URL. Canonical
-				// email lives on kody.codes. Outbound always sends from the
-				// canonical domains, which requires Email Routing + Email
-				// Sending verification on the kody.codes zone.
-				"USER_EMAIL_DOMAIN": "inbox.kody.codes",
-				"SYSTEM_EMAIL_DOMAIN": "kody.codes",
+				// they can never silently rederive from APP_BASE_URL. Outbound
+				// email requires Email Routing and Email Sending verification on
+				// apphub.work.
+				"USER_EMAIL_DOMAIN": "inbox.kody.apphub.work",
+				"SYSTEM_EMAIL_DOMAIN": "kody.apphub.work",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
-				"FATHOM_SITE_ID": "WKKSDJGN",
+				"FATHOM_SITE_ID": "",
 				// Public playlist whose latest Atom-feed videos may open in
 				// the site-wide `/?youtubeId=` overlay. Tests leave this unset.
 				"YOUTUBE_ALLOWED_PLAYLIST_IDS": "PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY",
@@ -608,10 +600,10 @@
 				// in Stripe for existing subscribers and are matched via
 				// retiredProPriceIds. Historical $5 Standard is matched the
 				// same way.
-				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
-				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
-				"STRIPE_PRO_PRICE_ID": "price_1UChg1LAQpAnsYszAYn6eGgt",
-				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1UChg2LAQpAnsYszKAFCR778",
+				"STRIPE_STANDARD_PRICE_ID": "",
+				"STRIPE_STANDARD_YEARLY_PRICE_ID": "",
+				"STRIPE_PRO_PRICE_ID": "",
+				"STRIPE_PRO_YEARLY_PRICE_ID": "",
 				// Stripe Billing Portal configuration used by Manage
 				// subscription and by plan changes for existing subscribers
 				// (subscription_update flow, always_invoice proration, price
@@ -619,17 +611,8 @@
 				// Previous Pro list prices stay active off-portal). Preview
 				// and test leave it unset so Stripe uses the account default
 				// configuration.
-				"STRIPE_BILLING_PORTAL_CONFIGURATION_ID": "bpc_1UBzc8LAQpAnsYszyBkO2N3F",
-				// Disaster-recovery exporter → locked R2 bucket in the KCD
-				// (DR) account. The companion S3 credentials are Worker
-				// secrets set out-of-band via the Cloudflare API.
-				"DR_EXPORT_ENABLED": "true",
-				"DR_BACKUP_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
-				"DR_BACKUP_BUCKET_NAME": "kody-production-backups",
-				// Public verification material shared with the DR control plane.
-				// The matching signing private key remains control-plane-only.
-				"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
-				"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "MCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=",
+				"STRIPE_BILLING_PORTAL_CONFIGURATION_ID": "",
+				"DR_EXPORT_ENABLED": "false",
 			},
 		},
 		"preview": {

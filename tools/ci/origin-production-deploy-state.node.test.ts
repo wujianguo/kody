@@ -50,6 +50,29 @@ test('classifies a missing fleet with no namespaces as fresh', () => {
 	})
 })
 
+test('does not treat an existing platform script without namespaces as fresh', () => {
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: false,
+		platformScriptExists: true,
+		runtimeScriptExists: false,
+		namespaces: [],
+	})
+	expect(state.mode).toBe('ambiguous')
+})
+
+test('does not treat missing destination scripts as steady', () => {
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: true,
+		platformScriptExists: false,
+		runtimeScriptExists: true,
+		namespaces: [
+			...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
+			...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
+		],
+	})
+	expect(state.mode).toBe('ambiguous')
+})
+
 test('classifies completed transfer ownership as steady', () => {
 	const state = classifyOriginProductionScriptState({
 		originScriptExists: true,
@@ -270,7 +293,7 @@ test('stripOriginDurableObjectMigrations removes top-level and env migrations on
 	})
 })
 
-test('falls back to script existence only when namespace listing is unavailable', () => {
+test('refuses to infer migration ownership when namespace listing is unavailable', () => {
 	expect(
 		classifyOriginProductionScriptState({
 			originScriptExists: false,
@@ -278,7 +301,7 @@ test('falls back to script existence only when namespace listing is unavailable'
 			runtimeScriptExists: false,
 			namespaces: null,
 		}).mode,
-	).toBe('fresh')
+	).toBe('ambiguous')
 	expect(
 		classifyOriginProductionScriptState({
 			originScriptExists: true,
@@ -286,7 +309,7 @@ test('falls back to script existence only when namespace listing is unavailable'
 			runtimeScriptExists: true,
 			namespaces: null,
 		}).mode,
-	).toBe('steady')
+	).toBe('ambiguous')
 	expect(
 		classifyOriginProductionScriptState({
 			originScriptExists: true,
