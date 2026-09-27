@@ -165,7 +165,8 @@ function buildMainGeneratedConfig(envName: string) {
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
-			PACKAGE_APP_BASE_URL: envName === 'production' ? 'https://kodybox.bid' : '',
+			PACKAGE_APP_BASE_URL:
+				envName === 'production' ? 'https://kodybox.bid' : '',
 		},
 	}
 	return { name: 'kody', env: { [envName]: env } }

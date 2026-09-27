@@ -195,10 +195,15 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 		const client = { accountId, apiToken }
 		const [jobsExists, originExists, namespaces] = await Promise.all([
 			getCloudflareWorkerScriptExists({ ...client, scriptName: 'kody-jobs' }),
-			getCloudflareWorkerScriptExists({ ...client, scriptName: 'kody-production' }),
+			getCloudflareWorkerScriptExists({
+				...client,
+				scriptName: 'kody-production',
+			}),
 			listCloudflareDurableObjectNamespaces(client),
 		])
-		const owners = namespaces.filter((entry) => entry.className === 'JobManager')
+		const owners = namespaces.filter(
+			(entry) => entry.className === 'JobManager',
+		)
 		if (
 			owners.some(
 				(entry) =>
@@ -216,7 +221,12 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 				fail('Fresh jobs deployment requires --fresh-migration.')
 			}
 			productionBootstrap = true
-		} else if (jobsExists && !originExists && jobsOwnClass && !originOwnsClass) {
+		} else if (
+			jobsExists &&
+			!originExists &&
+			jobsOwnClass &&
+			!originOwnsClass
+		) {
 			if (!options.freshMigration) {
 				fail('Incomplete fresh jobs deployment requires --fresh-migration.')
 			}
@@ -232,7 +242,9 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 			)
 		}
 		if (jobsOwnClass) {
-			baseConfig.migrations = [{ tag: 'v1', new_sqlite_classes: ['JobManager'] }]
+			baseConfig.migrations = [
+				{ tag: 'v1', new_sqlite_classes: ['JobManager'] },
+			]
 		}
 	}
 
