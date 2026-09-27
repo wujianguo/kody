@@ -317,7 +317,11 @@ test('generate publishes the package-app zone routes for production', async () =
 					migrations?: unknown
 				}
 			}
-			migrations?: Array<{ tag?: string; transferred_classes?: unknown }>
+			migrations?: Array<{
+				tag?: string
+				transferred_classes?: Array<{ from?: string; to?: string }>
+				new_sqlite_classes?: string[]
+			}>
 		}>(await readFile(outConfigPath, 'utf8'))
 
 		// Package-app hosts are zone routes, never custom domains: a custom
@@ -331,9 +335,18 @@ test('generate publishes the package-app zone routes for production', async () =
 		expect(runtimeConfig.env?.production?.workers_dev).toBe(true)
 		// The storage transfer migration survives generation untouched.
 		expect(runtimeConfig.migrations?.[0]?.tag).toBe('v1')
-		expect(
-			Array.isArray(runtimeConfig.migrations?.[0]?.transferred_classes),
-		).toBe(true)
+		expect(runtimeConfig.migrations?.[0]?.transferred_classes).toEqual([
+			{ from: 'StorageRunner', from_script: 'kody', to: 'StorageRunner' },
+			{ from: 'RunLog', from_script: 'kody', to: 'RunLog' },
+			{
+				from: 'PackageRealtimeSession',
+				from_script: 'kody',
+				to: 'PackageRealtimeSession',
+			},
+		])
+		expect(runtimeConfig.migrations?.[0]?.new_sqlite_classes).toEqual([
+			'PackageServiceInstance',
+		])
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

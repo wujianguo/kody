@@ -7,6 +7,7 @@ import {
 	inspectOriginProductionScriptState,
 	getCloudflareWorkerScriptExists,
 	getCloudflareWorkerSecretPlaceholder,
+	listCloudflareDurableObjectNamespaces,
 	isCloudflareNotFoundError,
 	isCloudflareOkNonJsonError,
 	originBootstrapConfigPath,
@@ -533,6 +534,207 @@ test('getCloudflareWorkerSecretPlaceholder rejects oversized multipart responses
 			},
 		}),
 	).resolves.toBe(false)
+})
+
+test('resumes only the exact interrupted runtime transfer with a verified placeholder', async () => {
+	const state = await inspectOriginProductionScriptState({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher: async (input) => {
+			const url = String(input)
+			if (url.includes('/workers/durable_objects/namespaces')) {
+				return Response.json({
+					success: true,
+					result: [
+						...runtimeOwnedClassNames.map((className) => ({
+							script: productionOriginScriptName,
+							class: className,
+						})),
+						...platformOwnedClassNames.map((className) => ({
+							script: productionPlatformScriptName,
+							class: className,
+						})),
+					],
+					result_info: { total_pages: 1 },
+				})
+			}
+			const form = new FormData()
+			form.set(
+				decodeURIComponent(url.split('/').at(-1) ?? ''),
+				'export default { fetch() {} }',
+			)
+			return new Response(form)
+		},
+	})
+	expect(state.mode).toBe('resume-runtime-transfer')
+	expect(planOriginProductionDeploy(state)).toMatchObject({
+		originEntry: 'slim',
+		runOriginBootstrap: false,
+		forcePlatformAndRuntime: true,
+	})
+})
+
+test.each([
+	['missing origin class', []],
+	['extra origin class', [ownership(productionOriginScriptName, 'Extra')]],
+	[
+		'runtime has a class',
+		[ownership(productionRuntimeScriptName, 'StorageRunner')],
+	],
+	['extra platform class', [ownership(productionPlatformScriptName, 'Extra')]],
+	['missing platform class', []],
+])('rejects runtime transfer resume with %s', (caseName, extra) => {
+	const originClasses = runtimeOwnedClassNames.map((name) =>
+		ownership(productionOriginScriptName, name),
+	)
+	const platformClasses = transferredOn(
+		productionPlatformScriptName,
+		platformOwnedClassNames,
+	)
+	if (caseName === 'missing origin class') originClasses.pop()
+	if (caseName === 'missing platform class') platformClasses.pop()
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: true,
+		platformScriptExists: true,
+		runtimeScriptExists: true,
+		runtimeIsSecretPlaceholder: true,
+		namespaces: [...originClasses, ...platformClasses, ...extra],
+	})
+	expect(state.mode).toBe('ambiguous')
+})
+
+test('rejects runtime transfer resume without its exact placeholder or a complete namespace listing', () => {
+	const namespaces = [
+		...transferredOn(productionOriginScriptName, runtimeOwnedClassNames),
+		...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
+	]
+	for (const runtimeIsSecretPlaceholder of [false, undefined]) {
+		expect(
+			classifyOriginProductionScriptState({
+				originScriptExists: true,
+				platformScriptExists: true,
+				runtimeScriptExists: true,
+				runtimeIsSecretPlaceholder,
+				namespaces,
+			}).mode,
+		).toBe('ambiguous')
+	}
+	expect(
+		classifyOriginProductionScriptState({
+			originScriptExists: true,
+			platformScriptExists: true,
+			runtimeScriptExists: true,
+			runtimeIsSecretPlaceholder: true,
+			namespaces: null,
+		}).mode,
+	).toBe('ambiguous')
+})
+
+test.each([
+	['missing', undefined],
+	['invalid', 0],
+])(
+	'rejects %s namespace pagination metadata',
+	async (_caseName, totalPages) => {
+		await expect(
+			listCloudflareDurableObjectNamespaces({
+				accountId: 'acct',
+				apiToken: 'token',
+				apiBaseUrl: 'https://cf.test',
+				fetcher: async () =>
+					Response.json({
+						success: true,
+						result: [],
+						result_info:
+							totalPages === undefined
+								? undefined
+								: { total_pages: totalPages },
+					}),
+			}),
+		).rejects.toThrow(/incomplete pagination metadata/)
+	},
+)
+
+test('rejects namespace pagination metadata that shrinks on the second page', async () => {
+	await expect(
+		listCloudflareDurableObjectNamespaces({
+			accountId: 'acct',
+			apiToken: 'token',
+			apiBaseUrl: 'https://cf.test',
+			fetcher: async (input) => {
+				const page = Number(new URL(String(input)).searchParams.get('page'))
+				return Response.json({
+					success: true,
+					result: [],
+					result_info: { total_pages: page === 1 ? 2 : 1 },
+				})
+			},
+		}),
+	).rejects.toThrow(/incomplete pagination metadata/)
+})
+
+test('accepts Cloudflare total_count metadata only after reading the complete listing', async () => {
+	const pages: number[] = []
+	const namespaces = await listCloudflareDurableObjectNamespaces({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher: async (input) => {
+			const page = Number(new URL(String(input)).searchParams.get('page'))
+			pages.push(page)
+			const count = page === 1 ? 100 : 1
+			return Response.json({
+				success: true,
+				result: Array.from({ length: count }, (_, index) => ({
+					script: 'other-worker',
+					class: `Class${page}-${index}`,
+				})),
+				result_info: { page, per_page: 100, count, total_count: 101 },
+			})
+		},
+	})
+	expect(pages).toEqual([1, 2])
+	expect(namespaces).toHaveLength(101)
+})
+
+test('rejects a truncated total_count namespace listing', async () => {
+	await expect(
+		listCloudflareDurableObjectNamespaces({
+			accountId: 'acct',
+			apiToken: 'token',
+			apiBaseUrl: 'https://cf.test',
+			fetcher: async () =>
+				Response.json({
+					success: true,
+					result: [],
+					result_info: { page: 1, per_page: 100, count: 0, total_count: 1 },
+				}),
+		}),
+	).rejects.toThrow(/incomplete pagination metadata/)
+})
+
+test('reads every namespace page before classifying ownership', async () => {
+	const pages: number[] = []
+	const namespaces = await listCloudflareDurableObjectNamespaces({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher: async (input) => {
+			const page = Number(new URL(String(input)).searchParams.get('page'))
+			pages.push(page)
+			return Response.json({
+				success: true,
+				result: [{ script: 'kody-production', class: `Class${page}` }],
+				result_info: { total_pages: 2 },
+			})
+		},
+	})
+	expect(pages).toEqual([1, 2])
+	expect(namespaces).toEqual([
+		ownership(productionOriginScriptName, 'Class1'),
+		ownership(productionOriginScriptName, 'Class2'),
+	])
 })
 
 test('isCloudflareNotFoundError matches only 404 probe failures', () => {

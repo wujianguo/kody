@@ -458,7 +458,9 @@ jobs:
         if: >-
           needs.sha-guard.outputs.deploy_runtime == 'true' ||
           needs.sha-guard.outputs.deploy_platform == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         run: |
           set -euo pipefail
           node tools/ci/runtime-worker-config.ts generate \
@@ -476,7 +478,9 @@ jobs:
         id: platform_config
         if: >-
           needs.sha-guard.outputs.deploy_platform == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         run: |
           set -euo pipefail
           node tools/ci/platform-worker-config.ts generate \
@@ -558,7 +562,9 @@ jobs:
       - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
         if: >-
           needs.sha-guard.outputs.deploy_runtime == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_RUNTIME_API_TOKEN:
@@ -584,7 +590,9 @@ jobs:
       - name: 🔐 Sync Cloudflare Secrets to platform worker (bulk)
         if: >-
           needs.sha-guard.outputs.deploy_platform == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG:
@@ -712,7 +720,9 @@ jobs:
         id: deploy_platform
         if: >-
           needs.sha-guard.outputs.deploy_platform == 'true' &&
-          steps.resources.outputs.origin_deploy_mode != 'fresh'
+          steps.resources.outputs.origin_deploy_mode != 'fresh' &&
+          steps.resources.outputs.origin_deploy_mode !=
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -768,7 +778,9 @@ jobs:
         id: deploy_runtime
         if: >-
           needs.sha-guard.outputs.deploy_runtime == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -819,7 +831,10 @@ jobs:
 
       - name: ☁️ Complete fresh platform worker bindings
         id: deploy_platform_fresh
-        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        if: >-
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -837,7 +852,9 @@ jobs:
         id: deploy_info
         if: >-
           needs.sha-guard.outputs.deploy_main == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           DEPLOY_ENVIRONMENT: production
@@ -851,7 +868,9 @@ jobs:
         id: deploy
         if: >-
           needs.sha-guard.outputs.deploy_main == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ENV: production
@@ -910,7 +929,10 @@ jobs:
           fi
 
       - name: ☁️ Restore jobs worker HOST binding
-        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        if: >-
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -937,7 +959,9 @@ jobs:
       - name: 🩺 Healthcheck (production)
         if: >-
           needs.sha-guard.outputs.deploy_main == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
@@ -982,7 +1006,9 @@ jobs:
       - name: 🩺 Healthcheck platform worker (production)
         if: >-
           needs.sha-guard.outputs.deploy_platform == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         shell: bash
         env:
           PLATFORM_URL:
@@ -1029,7 +1055,9 @@ jobs:
       - name: 🩺 Healthcheck runtime worker (production)
         if: >-
           needs.sha-guard.outputs.deploy_runtime == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         shell: bash
         env:
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
@@ -1074,7 +1102,9 @@ jobs:
       - name: 🧪 Origin-only execute smoke check (production)
         if: >-
           needs.sha-guard.outputs.deploy_main == 'true' ||
-          steps.resources.outputs.origin_deploy_mode == 'fresh'
+          steps.resources.outputs.origin_deploy_mode == 'fresh' ||
+          steps.resources.outputs.origin_deploy_mode ==
+          'resume-runtime-transfer'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}

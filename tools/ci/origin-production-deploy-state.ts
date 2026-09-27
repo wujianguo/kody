@@ -58,7 +58,11 @@ export function previewFleetScriptNames(
 	}
 }
 
-export type OriginProductionDeployMode = 'fresh' | 'steady' | 'ambiguous'
+export type OriginProductionDeployMode =
+	| 'fresh'
+	| 'resume-runtime-transfer'
+	| 'steady'
+	| 'ambiguous'
 
 export type DurableObjectNamespaceOwnership = {
 	script: string
@@ -102,6 +106,15 @@ export function planOriginProductionDeploy(
 			mode: 'fresh',
 			originEntry: 'slim',
 			runOriginBootstrap: true,
+			forcePlatformAndRuntime: true,
+			reason: state.reason,
+		}
+	}
+	if (state.mode === 'resume-runtime-transfer') {
+		return {
+			mode: state.mode,
+			originEntry: 'slim',
+			runOriginBootstrap: false,
 			forcePlatformAndRuntime: true,
 			reason: state.reason,
 		}
@@ -214,6 +227,7 @@ export function classifyOriginProductionScriptState(input: {
 	platformScriptExists?: boolean | null
 	runtimeScriptExists?: boolean | null
 	allScriptsAreSecretPlaceholders?: boolean
+	runtimeIsSecretPlaceholder?: boolean
 	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership> | null
 	scriptNames?: OriginFleetScriptNames
 }): OriginProductionScriptState {
@@ -274,6 +288,41 @@ export function classifyOriginProductionScriptState(input: {
 			return scriptState(
 				'fresh',
 				'All three production scripts contain only the verified secret-sync placeholder and no transferred Durable Object namespace exists.',
+			)
+		}
+
+		if (
+			input.originScriptExists === true &&
+			input.platformScriptExists === true &&
+			input.runtimeScriptExists === true &&
+			input.runtimeIsSecretPlaceholder === true &&
+			scriptNames.origin === productionOriginScriptName &&
+			scriptNames.platform === productionPlatformScriptName &&
+			scriptNames.runtime === productionRuntimeScriptName &&
+			input.namespaces.filter((entry) => entry.script === scriptNames.origin)
+				.length === runtimeOwnedClassNames.length &&
+			runtimeOwnedClassNames.every((className) =>
+				input.namespaces?.some(
+					(entry) =>
+						entry.script === scriptNames.origin &&
+						entry.className === className,
+				),
+			) &&
+			input.namespaces.filter((entry) => entry.script === scriptNames.platform)
+				.length === platformOwnedClassNames.length &&
+			platformOwnedClassNames.every((className) =>
+				input.namespaces?.some(
+					(entry) =>
+						entry.script === scriptNames.platform &&
+						entry.className === className,
+				),
+			) &&
+			!input.namespaces.some((entry) => entry.script === scriptNames.runtime)
+		) {
+			return scriptState(
+				'resume-runtime-transfer',
+				'Origin owns exactly the runtime classes, platform owns exactly the platform classes, and runtime is the verified secret-sync placeholder; resume runtime transfer without replaying completed bootstraps.',
+				originOwnedTransferredClassNames,
 			)
 		}
 
@@ -477,8 +526,30 @@ export async function listCloudflareDurableObjectNamespaces(input: {
 			}
 			namespaces.push(ownership)
 		}
-		const totalPages = payload.result_info?.total_pages
-		if (typeof totalPages !== 'number' || page >= totalPages) break
+		const info = payload.result_info
+		const reportedTotalPages = info?.total_pages
+		const reportedTotalCount = info?.total_count
+		const totalPages = Number.isSafeInteger(reportedTotalPages)
+			? (reportedTotalPages as number)
+			: Number.isSafeInteger(reportedTotalCount) &&
+				  info?.page === page &&
+				  info?.per_page === 100 &&
+				  info?.count === batch.length &&
+				  (reportedTotalCount as number) >= namespaces.length
+				? Math.max(1, Math.ceil((reportedTotalCount as number) / 100))
+				: null
+		if (
+			totalPages === null ||
+			totalPages < page ||
+			(totalPages === page &&
+				Number.isSafeInteger(reportedTotalCount) &&
+				namespaces.length !== reportedTotalCount)
+		) {
+			throw new Error(
+				'Cloudflare Durable Object namespace listing has incomplete pagination metadata.',
+			)
+		}
+		if (page === totalPages) break
 		page += 1
 	}
 	return namespaces
@@ -517,6 +588,7 @@ export async function inspectOriginProductionScriptState(input: {
 			)
 		}
 		let allScriptsAreSecretPlaceholders = false
+		let runtimeIsSecretPlaceholder = false
 		if (
 			namespaces &&
 			originScriptExists &&
@@ -524,29 +596,45 @@ export async function inspectOriginProductionScriptState(input: {
 			runtimeScriptExists &&
 			scriptNames.origin === productionOriginScriptName &&
 			scriptNames.platform === productionPlatformScriptName &&
-			scriptNames.runtime === productionRuntimeScriptName &&
-			!namespaces.some(
+			scriptNames.runtime === productionRuntimeScriptName
+		) {
+			const ownsAnyTransferred = namespaces.some(
 				(entry) =>
 					(entry.script === scriptNames.origin ||
 						entry.script === scriptNames.platform ||
 						entry.script === scriptNames.runtime) &&
 					transferredClassNames.some((name) => name === entry.className),
 			)
-		) {
-			allScriptsAreSecretPlaceholders = (
-				await Promise.all(
-					[scriptNames.origin, scriptNames.platform, scriptNames.runtime].map(
-						(scriptName) =>
-							getCloudflareWorkerSecretPlaceholder({ ...client, scriptName }),
-					),
+			if (!ownsAnyTransferred) {
+				allScriptsAreSecretPlaceholders = (
+					await Promise.all(
+						[scriptNames.origin, scriptNames.platform, scriptNames.runtime].map(
+							(scriptName) =>
+								getCloudflareWorkerSecretPlaceholder({ ...client, scriptName }),
+						),
+					)
+				).every(Boolean)
+			} else if (
+				namespaces.filter((entry) => entry.script === scriptNames.origin)
+					.length === runtimeOwnedClassNames.length &&
+				namespaces.filter((entry) => entry.script === scriptNames.platform)
+					.length === platformOwnedClassNames.length &&
+				!namespaces.some((entry) => entry.script === scriptNames.runtime)
+			) {
+				runtimeIsSecretPlaceholder = await getCloudflareWorkerSecretPlaceholder(
+					{
+						...client,
+						scriptName: scriptNames.runtime,
+					},
 				)
-			).every(Boolean)
+			}
 		}
 		return classifyOriginProductionScriptState({
 			originScriptExists,
 			platformScriptExists,
 			runtimeScriptExists,
 			allScriptsAreSecretPlaceholders,
+			runtimeIsSecretPlaceholder,
 			namespaces,
 			scriptNames,
 		})

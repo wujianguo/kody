@@ -85,11 +85,6 @@
 					"from_script": "kody",
 					"to": "PackageRealtimeSession",
 				},
-				{
-					"from": "PackageServiceInstance",
-					"from_script": "kody",
-					"to": "PackageServiceInstance",
-				},
 			],
 			// Wrangler 4.131+ builds getDurableObjectClassNameToUseSQLiteMap on
 			// real `wrangler deploy` (container prep) and ignores
