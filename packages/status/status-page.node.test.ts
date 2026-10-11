@@ -201,7 +201,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	const maintenance = renderMaintenancePage()
 	expect(
 		missing(maintenance, [
-		'href="https://status.kody.apphub.work/"',
+			'href="https://status.kody.apphub.work/"',
 			`href="${statusFaviconPath('unknown')}"`,
 		]),
 	).toEqual([])

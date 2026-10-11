@@ -1,7 +1,7 @@
 # kody API edge worker
 
-Public edge for the Kody Open API at `https://api.kody.apphub.work`. It serves JSON
-only:
+Public edge for the Kody Open API at `https://api.kody.apphub.work`. It serves
+JSON only:
 
 - `GET /health` returns `{ ok, commit }` and is answered at the edge.
 - `GET /openapi.json` returns the OpenAPI 3.1 document.
