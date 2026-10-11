@@ -19,7 +19,7 @@ function createEnv(
 
 test('health returns ok and the deploy commit', async () => {
 	const response = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/health'),
+		new Request('https://api-docs.kody.apphub.work/health'),
 		createEnv(),
 	)
 	expect(response.status).toBe(200)
@@ -29,7 +29,7 @@ test('health returns ok and the deploy commit', async () => {
 
 test('root serves Scalar HTML pointing at the proxied OpenAPI path', async () => {
 	const response = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/'),
+		new Request('https://api-docs.kody.apphub.work/'),
 		createEnv(),
 	)
 	expect(response.status).toBe(200)
@@ -44,14 +44,14 @@ test('root serves Scalar HTML pointing at the proxied OpenAPI path', async () =>
 	)
 	expect(html).toContain('crossorigin="anonymous"')
 	expect(response.headers.get('Content-Security-Policy')).toBe(
-		"default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https:; font-src https: data:; img-src 'self' https: data:; connect-src 'self' https://api.kody.codes; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'",
+		"default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https:; font-src https: data:; img-src 'self' https: data:; connect-src 'self' https://api.kody.apphub.work; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'",
 	)
 	expect(html).not.toMatch(/kody_at_/)
 })
 
 test('docs CSP connects to the configured spec origin and is only set on HTML', async () => {
 	const root = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/'),
+		new Request('https://api-docs.kody.apphub.work/'),
 		createEnv({ OPENAPI_SPEC_URL: 'https://api.example.test/v2/openapi.json' }),
 	)
 	expect(root.headers.get('Content-Security-Policy')).toContain(
@@ -59,7 +59,7 @@ test('docs CSP connects to the configured spec origin and is only set on HTML', 
 	)
 
 	const health = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/health'),
+		new Request('https://api-docs.kody.apphub.work/health'),
 		createEnv(),
 	)
 	expect(health.headers.get('Content-Security-Policy')).toBeNull()
@@ -76,7 +76,7 @@ test('openapi proxy forwards the upstream document', async () => {
 		)
 
 	const response = await handleApiDocsRequest(
-		new Request(`https://api-docs.kody.codes${openApiProxyPath}`),
+		new Request(`https://api-docs.kody.apphub.work${openApiProxyPath}`),
 		createEnv({ OPENAPI_SPEC_URL: 'https://api.example.test/openapi.json' }),
 	)
 	expect(response.status).toBe(200)
@@ -100,7 +100,7 @@ test('openapi proxy returns 502 when upstream fails', async () => {
 		.mockResolvedValue(new Response('nope', { status: 503 }))
 
 	const response = await handleApiDocsRequest(
-		new Request(`https://api-docs.kody.codes${openApiProxyPath}`),
+		new Request(`https://api-docs.kody.apphub.work${openApiProxyPath}`),
 		createEnv(),
 	)
 	expect(response.status).toBe(502)
@@ -113,14 +113,14 @@ test('openapi proxy returns 502 when upstream fails', async () => {
 
 test('rejects non-GET methods and unknown paths', async () => {
 	const post = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/', { method: 'POST' }),
+		new Request('https://api-docs.kody.apphub.work/', { method: 'POST' }),
 		createEnv(),
 	)
 	expect(post.status).toBe(405)
 	expect(post.headers.get('Allow')).toBe('GET, HEAD')
 
 	const missing = await handleApiDocsRequest(
-		new Request('https://api-docs.kody.codes/nope'),
+		new Request('https://api-docs.kody.apphub.work/nope'),
 		createEnv(),
 	)
 	expect(missing.status).toBe(404)

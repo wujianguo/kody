@@ -156,7 +156,8 @@ function buildMainGeneratedConfig(envName: string) {
 		})),
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
-			PACKAGE_APP_BASE_URL: envName === 'production' ? 'https://kody.run' : '',
+			PACKAGE_APP_BASE_URL:
+				envName === 'production' ? 'https://kodybox.bid' : '',
 			...(envName === 'preview'
 				? { ARTIFACTS_NAMESPACE: 'kody-pr-7' }
 				: { ARTIFACTS_NAMESPACE: 'production' }),
@@ -290,8 +291,8 @@ test('generate truncates long branch preview workflow names to 64 chars', async 
 })
 
 const packageAppRoutes = [
-	{ pattern: 'kody.run/*', zone_name: 'kody.run' },
-	{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+	{ pattern: 'kodybox.bid/*', zone_name: 'kodybox.bid' },
+	{ pattern: '*.kodybox.bid/*', zone_name: 'kodybox.bid' },
 ]
 
 test('generate publishes the package-app custom domain for production', async () => {

@@ -116,16 +116,16 @@ jobs:
             echo "deploy_runtime=true" >> "$GITHUB_OUTPUT"
             echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
             echo "deploy_highlight=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
             echo "deploy_api_worker=true" >> "$GITHUB_OUTPUT"
             echo "deploy_api_docs_worker=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: forced (workflow_dispatch)."
+            echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
+            echo "Backup control plane deploy: disabled for this fork."
             echo "Status worker deploy: forced (workflow_dispatch)."
             echo "API worker deploy: forced (workflow_dispatch)."
             echo "API docs worker deploy: forced (workflow_dispatch)."
-            echo "Nx cache worker deploy: forced (workflow_dispatch)."
+            echo "Nx cache worker deploy: disabled for this fork."
             exit 0
           fi
 
@@ -149,15 +149,8 @@ jobs:
 
           node tools/ci/deploy-path-filter.ts <"$PATH_FILTER_LIST" | tee -a "$GITHUB_OUTPUT"
 
-          if grep -E \
-            '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-)' \
-            "$PATH_FILTER_LIST" >/dev/null; then
-            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: path filter matched."
-          else
-            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
-            echo "Backup control plane deploy: skipped (no relevant path changes)."
-          fi
+          echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
+          echo "Backup control plane deploy: disabled for this fork."
 
           if grep -E \
             '^(\.github/workflows/deploy\.yml|packages/status/)' \
@@ -203,50 +196,6 @@ jobs:
           fi
           rm -f "$PATH_FILTER_LIST"
 
-  # Cloudflare token split (#2010). CLOUDFLARE_API_TOKEN is the deploy token:
-  # wrangler and tools/ci authenticate with it, and it is never uploaded to a
-  # Worker. Each Worker's CLOUDFLARE_API_TOKEN secret comes from its own
-  # narrower GitHub secret, overwritten on every sync so no Worker keeps a
-  # stale deploy-scope value:
-  #   kody-production, kody-platform <- CLOUDFLARE_APP_API_TOKEN
-  #   kody-runtime                   <- CLOUDFLARE_RUNTIME_API_TOKEN
-  #   kody-status                    <- CLOUDFLARE_STATUS_API_TOKEN
-  # There is no fallback to the deploy token. Run this before any production
-  # mutation (including jobs/highlight siblings) so a missing token fails the
-  # deploy instead of leaving the fleet half-applied.
-  require-worker-tokens:
-    runs-on: ubuntu-latest
-    name: 🔒 Require Worker-scoped Cloudflare tokens
-    timeout-minutes: 2
-    needs: sha-guard
-    if: needs.sha-guard.outputs.should_deploy == 'true'
-    environment:
-      name: production
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-        with:
-          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
-          fetch-depth: 1
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 26
-
-      - name: 🔒 Check Worker-scoped Cloudflare tokens
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
-          CLOUDFLARE_RUNTIME_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
-          CLOUDFLARE_STATUS_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
-        run: >
-          node tools/ci/check-worker-cloudflare-tokens.ts
-          CLOUDFLARE_APP_API_TOKEN CLOUDFLARE_RUNTIME_API_TOKEN
-          CLOUDFLARE_STATUS_API_TOKEN
-
   # The jobs worker deploys before origin so origin's JOBS service binding
   # can validate against an existing jobs-worker script. See
   # docs/contributing/architecture/jobs-worker-migration-runbook.md.
@@ -256,11 +205,9 @@ jobs:
     timeout-minutes: 8
     needs:
       - sha-guard
-      - require-worker-tokens
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_highlight == 'true' &&
-      needs.require-worker-tokens.result == 'success'
+      needs.sha-guard.outputs.deploy_highlight == 'true'
     environment:
       name: production
     steps:
@@ -352,11 +299,9 @@ jobs:
     timeout-minutes: 8
     needs:
       - sha-guard
-      - require-worker-tokens
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_jobs == 'true' &&
-      needs.require-worker-tokens.result == 'success'
+      needs.sha-guard.outputs.deploy_jobs == 'true'
     environment:
       name: production
     steps:
@@ -490,12 +435,10 @@ jobs:
     timeout-minutes: 20
     needs:
       - sha-guard
-      - require-worker-tokens
       - deploy-jobs-worker
       - deploy-highlight-worker
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
-      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       (needs.deploy-jobs-worker.result == 'success' ||
         needs.deploy-jobs-worker.result == 'skipped') &&
@@ -587,7 +530,6 @@ jobs:
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
           SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
@@ -621,7 +563,7 @@ jobs:
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
-          CLOUDFLARE_API_TOKEN=CLOUDFLARE_APP_API_TOKEN --set-from-env-optional
+          CLOUDFLARE_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
           --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
           GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
@@ -644,10 +586,9 @@ jobs:
       # (Cloudflare REST capabilities). Billing (Stripe), Kit subscriber tags,
       # OAuth client credentials, and maintenance secrets stay main-only so a
       # runtime-Worker compromise cannot reach them.
-      # The runtime Worker's CLOUDFLARE_API_TOKEN comes from the narrower
-      # CLOUDFLARE_RUNTIME_API_TOKEN GitHub secret (Email Sending + Artifacts
-      # only; see docs/contributing/environment-variables.md). It is required
-      # and never falls back to the deploy token.
+      # Personal-fork security tradeoff: the runtime Worker receives the same
+      # full-scope Cloudflare token used for deployment. Upstream uses a
+      # narrower Worker-only token to limit the impact of a runtime compromise.
       # --env "" with --name: wrangler secret bulk still suffixes -<env>
       # even when --name is set, so --env production would write
       # COOKIE_SECRET to kody-runtime-production while deploy uploads
@@ -658,8 +599,6 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_RUNTIME_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
           WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
@@ -671,7 +610,7 @@ jobs:
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
-          CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN
+          CLOUDFLARE_API_TOKEN
 
       # Platform worker is trusted (same secret set as origin): MCP Durable
       # Objects execute capabilities that need OAuth, Stripe, and the rest.
@@ -682,7 +621,6 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
           WRANGLER_CONFIG:
             ${{ steps.platform_config.outputs.platform_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
@@ -716,7 +654,7 @@ jobs:
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
-          CLOUDFLARE_API_TOKEN=CLOUDFLARE_APP_API_TOKEN --set-from-env-optional
+          CLOUDFLARE_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
           --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
           GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
@@ -1201,23 +1139,20 @@ jobs:
     # /health/components), which would open spurious incidents.
     needs:
       - sha-guard
-      - require-worker-tokens
       - deploy
     # always() is required: `deploy` itself uses always() so it can run
     # after skipped jobs/highlight siblings. Without always() here, GitHub
     # skips this job whenever those siblings were skipped — even when the
     # path filter set deploy_status_worker=true (see #2143: guard matched
     # packages/status/ but this job never started).
-    # require-worker-tokens already gated STATUS (and APP/RUNTIME) before any
-    # sibling mutation; re-check here only if that job somehow did not run.
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
-      needs.require-worker-tokens.result == 'success' && needs.deploy.result ==
-      'success' && needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.deploy.result == 'success' &&
+      needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
-      url: https://status.kody.codes
+      url: https://status.kody.apphub.work
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -1267,18 +1202,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_STATUS_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
         run: |
           set -euo pipefail
+          # Personal-fork security tradeoff: the status Worker receives the
+          # full deploy token instead of an isolated Email Sending token.
           # The status worker sends alert email through the Cloudflare Email
-          # REST API. Wrangler authenticates with the deploy token; the Worker
-          # secret is the Email Sending-only CLOUDFLARE_STATUS_API_TOKEN.
-          if [ -z "${CLOUDFLARE_STATUS_API_TOKEN:-}" ]; then
-            echo "Missing GitHub Actions secret CLOUDFLARE_STATUS_API_TOKEN." >&2
-            exit 1
-          fi
-          printf '%s' "$CLOUDFLARE_STATUS_API_TOKEN" | npx wrangler secret put \
+          # REST API. Wrangler and the Worker both use this token.
+          printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put \
             CLOUDFLARE_API_TOKEN --config packages/status/wrangler.jsonc
 
       - name: 🔐 Sync status incident event secret
@@ -1304,7 +1234,7 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          HEALTHCHECK_URL="https://status.kody.codes/health"
+          HEALTHCHECK_URL="https://status.kody.apphub.work/health"
 
           attempts=20
           delay_seconds=3
@@ -1329,26 +1259,22 @@ jobs:
 
   deploy-api-worker:
     runs-on: ubuntu-latest
-    name: 🔌 Deploy API worker (api.kody.codes)
+    name: 🔌 Deploy API worker (api.kody.apphub.work)
     timeout-minutes: 8
     # The KODY_API service binding targets the origin's KodyApi entrypoint,
     # so this deploys after origin. `deploy` may be skipped when only the
     # edge worker changed; the binding then targets the live origin.
-    # require-worker-tokens must succeed: when that job fails, `deploy` is
-    # skipped (not failed), and skipped must not greenlight an API rollout.
     needs:
       - sha-guard
-      - require-worker-tokens
       - deploy
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
-      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_api_worker == 'true' &&
       (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
     environment:
       name: production
-      url: https://api.kody.codes
+      url: https://api.kody.apphub.work
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -1405,7 +1331,7 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          API_URL="https://api.kody.codes"
+          API_URL="https://api.kody.apphub.work"
 
           # A brand-new custom domain can take a few minutes for DNS and the
           # edge certificate, so this waits longer than the other workers.
@@ -1435,27 +1361,23 @@ jobs:
 
   deploy-api-docs-worker:
     runs-on: ubuntu-latest
-    name: 📚 Deploy API docs worker (api-docs.kody.codes)
+    name: 📚 Deploy API docs worker (api-docs.kody.apphub.work)
     timeout-minutes: 8
     # Independent of origin: docs fetch the live OpenAPI JSON over HTTPS.
     # Deploys after the API worker when that job ran, so a brand-new API
     # hostname is live before docs proxy it; skipped API deploys are fine.
-    # Same require-worker-tokens gate as API: a token failure must not leave
-    # docs deploying while origin/API stay rolled back.
     needs:
       - sha-guard
-      - require-worker-tokens
       - deploy-api-worker
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
-      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_api_docs_worker == 'true' &&
       (needs.deploy-api-worker.result == 'success' ||
         needs.deploy-api-worker.result == 'skipped')
     environment:
       name: production
-      url: https://api-docs.kody.codes
+      url: https://api-docs.kody.apphub.work
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -1509,7 +1431,7 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          DOCS_URL="https://api-docs.kody.codes"
+          DOCS_URL="https://api-docs.kody.apphub.work"
 
           # Custom domain DNS + cert can take a few minutes on first deploy.
           attempts=40
@@ -1544,9 +1466,8 @@ jobs:
     name: 🛟 Deploy DR backup control plane
     timeout-minutes: 8
     needs: sha-guard
-    if: >-
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_backup_control_plane == 'true'
+    # This fork has no separate DR account or DR credentials.
+    if: ${{ false }}
     environment:
       name: production
       url: https://kody-dr.kentcdodds.com
@@ -1620,9 +1541,8 @@ jobs:
 
   deploy-nx-cache-worker:
     needs: sha-guard
-    if: >-
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_nx_cache_worker == 'true'
+    # This fork does not deploy the optional Nx remote cache worker.
+    if: ${{ false }}
     uses: ./.github/workflows/nx-cache-deploy.yml
     secrets: inherit
     with:

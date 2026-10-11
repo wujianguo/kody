@@ -4,7 +4,7 @@ import {
 } from '@kody-internal/shared/api-token-format.ts'
 
 /**
- * Edge half of `api.kody.codes`. Everything here runs before the request
+ * Edge half of `api.kody.apphub.work`. Everything here runs before the request
  * reaches origin: CORS, rate limits, header stripping, and the body cap.
  * Authentication and the operation itself run in origin's `KodyApi`
  * entrypoint (`packages/worker/src/open-api/`), next to D1.

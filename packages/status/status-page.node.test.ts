@@ -192,13 +192,16 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	).toEqual([])
 
 	expect(
-		faviconIcoRedirectLocation('https://status.kody.codes/favicon.ico', 'down'),
-	).toBe(`https://status.kody.codes${statusFaviconPath('down')}`)
+		faviconIcoRedirectLocation(
+			'https://status.kody.apphub.work/favicon.ico',
+			'down',
+		),
+	).toBe(`https://status.kody.apphub.work${statusFaviconPath('down')}`)
 
 	const maintenance = renderMaintenancePage()
 	expect(
 		missing(maintenance, [
-			'href="https://status.kody.codes/"',
+		'href="https://status.kody.apphub.work/"',
 			`href="${statusFaviconPath('unknown')}"`,
 		]),
 	).toEqual([])

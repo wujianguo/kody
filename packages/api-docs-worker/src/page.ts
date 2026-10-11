@@ -1,6 +1,7 @@
 /**
  * Scalar API reference shell. Spec URL is same-origin `/openapi.json`, which
- * this worker proxies from the live API so `api.kody.codes` never serves HTML.
+ * this worker proxies from the live API so `api.kody.apphub.work` never serves
+ * HTML.
  *
  * Pin the CDN package so a floating `latest` cannot break production docs.
  */
@@ -19,7 +20,7 @@ export function renderApiDocsPage(input: { title: string; specPath: string }) {
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>${title}</title>
 	<meta name="description" content="Interactive OpenAPI reference for the Kody HTTP API." />
-	<link rel="icon" href="https://kody.codes/favicon.ico" />
+	<link rel="icon" href="https://kody.apphub.work/favicon.ico" />
 	<style>
 		html, body { margin: 0; padding: 0; min-height: 100%; }
 	</style>

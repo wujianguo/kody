@@ -1,6 +1,6 @@
 import { renderApiDocsPage } from './page.ts'
 
-export const defaultOpenApiSpecUrl = 'https://api.kody.codes/openapi.json'
+export const defaultOpenApiSpecUrl = 'https://api.kody.apphub.work/openapi.json'
 export const openApiProxyPath = '/openapi.json'
 
 export type ApiDocsWorkerEnv = {
@@ -120,8 +120,9 @@ function docsHtmlResponse(method: string, specUrl: string) {
 }
 
 /**
- * Public docs surface for `api-docs.kody.codes`. Answers `/health`, serves the
- * Scalar shell at `/`, and proxies `/openapi.json` from the configured API.
+ * Public docs surface for `api-docs.kody.apphub.work`. Answers `/health`,
+ * serves the Scalar shell at `/`, and proxies `/openapi.json` from the
+ * configured API.
  */
 export async function handleApiDocsRequest(
 	request: Request,
