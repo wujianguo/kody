@@ -23,9 +23,9 @@ function unusedStore(): StatusWorkerEnv['STATUS_STORE'] {
 function env(): StatusWorkerEnv {
 	return {
 		STATUS_STORE: unusedStore(),
-		PRIMARY_ORIGIN: 'https://kody.codes',
-		PACKAGE_APP_ORIGIN: 'https://kody.run',
-		STATUS_PAGE_URL: 'https://status.kody.codes',
+		PRIMARY_ORIGIN: 'https://kody.apphub.work',
+		PACKAGE_APP_ORIGIN: 'https://kodybox.bid',
+		STATUS_PAGE_URL: 'https://status.kody.apphub.work',
 		ALERT_EMAIL_TO: 'ops@example.com',
 		ALERT_EMAIL_FROM: 'status@example.com',
 		BUILD_COMMIT: 'abc123',
@@ -34,20 +34,20 @@ function env(): StatusWorkerEnv {
 
 test('GET /maintenance returns the static page without touching status storage', async () => {
 	const response = await worker.fetch(
-		workerRequest('https://status.kody.codes/maintenance'),
+		workerRequest('https://status.kody.apphub.work/maintenance'),
 		env(),
 	)
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	expect(response.headers.get('Content-Type')).toContain('text/html')
 	const html = await response.text()
-	expect(html).toContain('href="https://status.kody.codes/"')
+	expect(html).toContain('href="https://status.kody.apphub.work/"')
 	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)
 })
 
 test('GET /health stays independent of the maintenance page', async () => {
 	const response = await worker.fetch(
-		workerRequest('https://status.kody.codes/health'),
+		workerRequest('https://status.kody.apphub.work/health'),
 		env(),
 	)
 	expect(response.status).toBe(200)

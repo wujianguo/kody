@@ -274,17 +274,10 @@ test('query targets refuse PR previews and the production worker name', () => {
 	expect(() => parseQueryTarget('kody-production')).toThrow(/branch previews/)
 })
 
-test('Stripe prices are classified with the worker billing config', async () => {
-	const production = await readProductionBillingEnv()
-	expect(production.STRIPE_PRO_PRICE_ID).toMatch(/^price_/)
-	expect(classifyStripePrice(production, production.STRIPE_PRO_PRICE_ID!)).toBe(
-		'purchasable-pro',
+test('production billing queries fail closed when this fork has no Stripe prices', async () => {
+	await expect(readProductionBillingEnv()).rejects.toThrow(
+		'env.production.vars.STRIPE_PRO_PRICE_ID is unset',
 	)
-	expect(classifyStripePrice(production, retiredProPriceId)).toBe('retired-pro')
-	expect(classifyStripePrice(production, retiredStandardPriceId)).toBe(
-		'retired-standard',
-	)
-	expect(classifyStripePrice(production, 'price_unknown')).toBe('unmapped')
 })
 
 test('the production OAuth KV title follows the Wrangler worker name and any title override', async () => {
