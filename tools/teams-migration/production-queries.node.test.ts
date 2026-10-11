@@ -4,7 +4,6 @@ import path from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	assertReadOnlySql,
-	classifyStripePrice,
 	parseQueryTarget,
 	readProductionBillingEnv,
 	resolveProductionOauthKvTitle,
