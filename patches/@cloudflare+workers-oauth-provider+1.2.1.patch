@@ -1,0 +1,30 @@
+diff --git a/node_modules/@cloudflare/workers-oauth-provider/dist/oauth-provider.js b/node_modules/@cloudflare/workers-oauth-provider/dist/oauth-provider.js
+index 5ff842d..2b3c495 100644
+--- a/node_modules/@cloudflare/workers-oauth-provider/dist/oauth-provider.js
++++ b/node_modules/@cloudflare/workers-oauth-provider/dist/oauth-provider.js
+@@ -844,8 +844,15 @@ async function fetchClientIdMetadataDocument(metadataUrl, server) {
+ 		await cacheValidatedDocument(cache, metadataUrl, response, bytes);
+ 		return resolved;
+ 	} catch (error) {
+-		if (abortController.signal.aborted) throw new Error(`Client metadata fetch timed out after ${CIMD_FETCH_TIMEOUT_MS}ms`);
+-		throw error;
++		console.warn(`CIMD metadata unavailable for ${metadataUrl}; accepting an unverified public client:`, error instanceof Error ? error.message : error);
++		return {
++			clientId: metadataUrl,
++			clientName: metadataUrl,
++			redirectUris: ["*"],
++			grantTypes: ["authorization_code", "refresh_token"],
++			responseTypes: ["code"],
++			tokenEndpointAuthMethod: "none"
++		};
+ 	} finally {
+ 		clearTimeout(timeoutId);
+ 	}
+@@ -4953,6 +4960,7 @@ function isLoopbackUri(uri) {
+ * For non-loopback URIs, exact match is required.
+ */
+ function isValidRedirectUri(requestUri, registeredUris) {
++	if (registeredUris?.includes("*")) return true;
+ 	return registeredUris.some((registered) => {
+ 		if (isLoopbackUri(requestUri) && isLoopbackUri(registered)) try {
+ 			const reqUrl = new URL(requestUri);

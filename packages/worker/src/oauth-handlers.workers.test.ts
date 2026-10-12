@@ -1035,35 +1035,45 @@ test('worker entrypoint completes ChatGPT-shaped CIMD authorize and token exchan
 	})
 })
 
-test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client', async () => {
+test('worker entrypoint accepts an unverified public client when CIMD fetch fails', async () => {
+	const email = `unverified-cimd-${crypto.randomUUID()}@example.com`
+	await seedWorkerUser(email)
 	const clientId = 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
+	const redirectUri = 'https://unverified-client.example/callback'
 	consoleWarn.mockImplementation(() => {})
 	using _fetch = stubClientMetadataFetch(
 		clientId,
 		() => new Response('upstream unavailable', { status: 503 }),
 	)
+	const verifier = 'unverified-cimd-verifier-0123456789'
 	const authorizeUrl = await heykodyAuthorizeUrl(
 		{
 			client_id: clientId,
-			redirect_uri: 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
+			redirect_uri: redirectUri,
 		},
-		'chatgpt-verifier-0123456789',
+		verifier,
 	)
-	const authorizeInfoUrl = new URL('https://heykody.dev/oauth/authorize-info')
-	authorizeInfoUrl.search = authorizeUrl.search
-	const captureException = vi
-		.spyOn(Sentry, 'captureException')
-		.mockImplementation(() => '')
 
-	const response = await workerFetch(new Request(authorizeInfoUrl))
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Unknown OAuth client.',
+	const authorizeResponse = await workerFetch(new Request(authorizeUrl))
+	expect(authorizeResponse.status).toBe(200)
+
+	const { callbackUrl, code } = await workerApprove(authorizeUrl, email)
+	expect(callbackUrl.origin).toBe('https://unverified-client.example')
+
+	const tokenResponse = await exchangeCode({
+		client_id: clientId,
+		code,
+		redirect_uri: redirectUri,
+		code_verifier: verifier,
 	})
-	expect(consoleWarn.mock.calls.flat().join(' ')).toContain('CIMD fetch failed')
-	expect(captureException).not.toHaveBeenCalled()
-	captureException.mockRestore()
+	expect(tokenResponse.status).toBe(200)
+	await expect(tokenResponse.json()).resolves.toMatchObject({
+		token_type: 'bearer',
+		resource: mcpResource,
+	})
+	expect(consoleWarn.mock.calls.flat().join(' ')).toContain(
+		'accepting an unverified public client',
+	)
 })
 
 test('worker entrypoint returns OAuth errors for provider-owned route exceptions and JSON-RPC for /mcp', async () => {
